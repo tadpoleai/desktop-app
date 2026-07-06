@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  .hc-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+  .hc-scroll::-webkit-scrollbar-thumb { background: #c9c9c9; border: 3px solid #fbfbfb; border-radius: 8px; }
+  .hc-scroll::-webkit-scrollbar-thumb:hover { background: #b3b3b3; }
+  .hc-scroll::-webkit-scrollbar-track { background: transparent; }
+  @keyframes hc-pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.85); } }
+  @keyframes hc-spin { to { transform: rotate(360deg); } }
+</style>
+</helmet>
+<div style="height:100%;display:flex;flex-direction:column;background:#fbfbfb;color:#232323;font-family:'Inter Tight',system-ui,-apple-system,'Segoe UI',sans-serif;font-size:13px;overflow:hidden;">
+
+  <!-- ============ DATA VIEW ============ -->
+  <sc-if value="{{ isData }}" hint-placeholder-val="{{ true }}">
+  <div class="hc-scroll" style="flex:1;display:flex;flex-direction:column;min-height:0;">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #e4e4e4;background:#f5f5f5;flex-shrink:0;">
+      <span style="font-weight:600;font-size:13px;letter-spacing:.01em;">数据集</span>
+      <span style="font-size:11px;color:#9a9a9a;">已索引 5 项</span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+        <div style="display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;background:#fff;border:1px solid #c6c6c6;border-radius:4px;width:300px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#9a9a9a" stroke-width="2"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>
+          <span style="font-size:12px;color:#8a8a8a;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">/home/fred/Data</span>
+        </div>
+        <button style="height:28px;padding:0 12px;background:linear-gradient(#fff,#f0f0f0);border:1px solid #c6c6c6;border-radius:4px;font-size:12px;color:#232323;cursor:pointer;display:flex;align-items:center;gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h6"/></svg>扫描</button>
+        <button style="height:28px;width:30px;background:linear-gradient(#fff,#f0f0f0);border:1px solid #c6c6c6;border-radius:4px;color:#5a5a5a;cursor:pointer;display:flex;align-items:center;justify-content:center;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      </div>
+    </div>
+    <div style="flex:1;overflow:auto;" class="hc-scroll">
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+        <thead>
+          <tr style="background:#f0f0f0;color:#6d6d6d;text-align:left;position:sticky;top:0;">
+            <th style="padding:7px 16px;font-weight:500;border-bottom:1px solid #dcdcdc;">路径</th>
+            <th style="padding:7px 12px;font-weight:500;border-bottom:1px solid #dcdcdc;width:110px;">类型</th>
+            <th style="padding:7px 12px;font-weight:500;border-bottom:1px solid #dcdcdc;width:100px;">大小</th>
+            <th style="padding:7px 12px;font-weight:500;border-bottom:1px solid #dcdcdc;width:130px;">索引时间</th>
+            <th style="padding:7px 16px;font-weight:500;border-bottom:1px solid #dcdcdc;width:110px;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{ datasets }}" as="d" hint-placeholder-count="5">
+            <tr style="border-bottom:1px solid #eee;">
+              <td style="padding:7px 16px;font-family:'IBM Plex Mono',monospace;font-size:12px;color:#333;">{{ d.path }}</td>
+              <td style="padding:7px 12px;"><span style="display:inline-block;padding:1px 8px;border-radius:3px;font-size:11px;font-weight:500;background:{{ d.badgeBg }};color:{{ d.badgeColor }};border:1px solid {{ d.badgeBorder }};">{{ d.type }}</span></td>
+              <td style="padding:7px 12px;color:#555;font-variant-numeric:tabular-nums;">{{ d.size }}</td>
+              <td style="padding:7px 12px;color:#8a8a8a;font-size:11.5px;">{{ d.time }}</td>
+              <td style="padding:7px 16px;"><button style="height:24px;padding:0 9px;background:#fff;border:1px solid #cfcfcf;border-radius:3px;font-size:11px;color:#333;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>打开目录</button></td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ RUN VIEW — PICKER ============ -->
+  <sc-if value="{{ showPicker }}" hint-placeholder-val="{{ true }}">
+  <div class="hc-scroll" style="flex:1;overflow:auto;padding:20px;">
+    <div style="font-weight:600;font-size:14px;margin-bottom:4px;">运行工作流</div>
+    <div style="font-size:12px;color:#8a8a8a;margin-bottom:16px;">选择一个工作流开始配置并执行</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;max-width:720px;">
+      <sc-for list="{{ workflows }}" as="w" hint-placeholder-count="2">
+        <div onClick="{{ w.pick }}" style="cursor:pointer;background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:16px;transition:border-color .12s,box-shadow .12s;" style-hover="border-color:#41cd52;box-shadow:0 2px 10px rgba(65,205,82,.14);">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px;">
+            <span style="width:30px;height:30px;border-radius:7px;background:rgba(65,205,82,.14);display:flex;align-items:center;justify-content:center;color:#199a3e;"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+            <span style="font-weight:600;font-size:14px;">{{ w.name }}</span>
+          </div>
+          <div style="font-size:12px;color:#7a7a7a;line-height:1.5;margin-bottom:10px;">{{ w.desc }}</div>
+          <div style="display:flex;gap:6px;">
+            <sc-for list="{{ w.exts }}" as="e" hint-placeholder-count="2">
+              <span style="padding:1px 8px;border-radius:3px;font-size:11px;background:#f0f0f0;border:1px solid #dcdcdc;color:#666;font-family:'IBM Plex Mono',monospace;">{{ e }}</span>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ RUN VIEW — CONFIG + RUN ============ -->
+  <sc-if value="{{ showConfig }}" hint-placeholder-val="{{ true }}">
+  <div class="hc-scroll" style="flex:1;overflow:auto;padding:16px 20px;display:flex;flex-direction:column;gap:14px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button onClick="{{ onBack }}" style="height:26px;padding:0 10px;background:linear-gradient(#fff,#f0f0f0);border:1px solid #c6c6c6;border-radius:4px;font-size:12px;color:#333;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>返回</button>
+      <span style="font-weight:600;font-size:14px;">{{ wfName }}</span>
+    </div>
+
+    <!-- input file -->
+    <div style="background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:14px;">
+      <div style="font-size:12px;color:#6d6d6d;margin-bottom:7px;">输入扫描文件</div>
+      <div style="display:flex;gap:8px;">
+        <input value="/home/fred/Data/warehouse_scan_01.hera" style="flex:1;height:30px;padding:0 10px;background:#fff;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;color:#333;" />
+        <button style="height:30px;padding:0 12px;background:linear-gradient(#fff,#f0f0f0);border:1px solid #c6c6c6;border-radius:4px;font-size:12px;color:#333;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>浏览</button>
+      </div>
+    </div>
+
+    <!-- glim-recon params -->
+    <div style="background:#fff;border:1px solid #e2e2e2;border-radius:6px;overflow:hidden;">
+      <div style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #eee;background:#f7f7f7;">
+        <span style="font-size:12px;color:#6d6d6d;">glim-recon 参数</span>
+        <span style="padding:1px 8px;border-radius:3px;font-size:11px;background:rgba(65,205,82,.14);color:#199a3e;border:1px solid rgba(65,205,82,.3);">r0.5</span>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:6px;height:24px;padding:0 8px;border:1px solid #cfcfcf;border-radius:4px;background:#fff;font-size:11.5px;color:#555;">版本 r0.5 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+      </div>
+      <div style="padding:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px 16px;">
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">时间窗口 (秒)</span><input value="0.1" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;" /></label>
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">计算模式</span><div style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;display:flex;align-items:center;justify-content:space-between;background:#fff;">cpu <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></label>
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">IMU Topic</span><input value="/livox/imu" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;" /></label>
+        <label style="display:flex;flex-direction:column;gap:5px;grid-column:span 2;"><span style="font-size:11.5px;color:#7a7a7a;">安装角 RPY (度, ZYX) <span style="color:#b0b0b0;">— 倒置 = [0,180,0]</span></span><div style="display:flex;gap:8px;"><input value="0" style="width:70px;height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;text-align:center;" /><input value="0" style="width:70px;height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;text-align:center;" /><input value="0" style="width:70px;height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;text-align:center;" /></div></label>
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">关键帧间距 (m)</span><input value="1.0" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;" /></label>
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">IMU 加速度噪声</span><input value="0.05" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;" /></label>
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">关键帧策略</span><div style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;display:flex;align-items:center;justify-content:space-between;background:#fff;">OVERLAP <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></label>
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">下采样分辨率 (m)</span><input value="0.25" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;" /></label>
+      </div>
+    </div>
+
+    <!-- run buttons -->
+    <div style="display:flex;gap:10px;align-items:center;">
+      <button onClick="{{ onRun }}" style="height:32px;padding:0 16px;background:linear-gradient(#4bd85e,#33bf47);border:1px solid #2ba63d;border-radius:5px;font-size:13px;font-weight:600;color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:7px;box-shadow:0 1px 2px rgba(0,0,0,.12);"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>运行</button>
+      <sc-if value="{{ running }}" hint-placeholder-val="{{ true }}">
+        <button style="height:32px;padding:0 14px;background:#fff;border:1px solid #d88;border-radius:5px;font-size:13px;color:#c0393e;cursor:pointer;display:inline-flex;align-items:center;gap:7px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>取消</button>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#199a3e;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="animation:hc-spin 1s linear infinite;"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>正在执行…</span>
+      </sc-if>
+    </div>
+
+    <!-- progress steps -->
+    <div style="background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:12px 14px;">
+      <div style="font-size:12px;color:#6d6d6d;margin-bottom:10px;">进度</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <sc-for list="{{ stepRows }}" as="s" hint-placeholder-count="2">
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:#f7f7f7;border-radius:4px;">
+            <span style="width:9px;height:9px;border-radius:50%;flex-shrink:0;background:{{ s.dotColor }};{{ s.dotAnim }}"></span>
+            <span style="font-size:12.5px;font-family:'IBM Plex Mono',monospace;">{{ s.label }}</span>
+            <span style="margin-left:auto;font-size:11.5px;color:{{ s.dotColor }};">{{ s.stateLabel }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ TASKS VIEW ============ -->
+  <sc-if value="{{ isTasks }}" hint-placeholder-val="{{ true }}">
+  <div style="flex:1;display:flex;flex-direction:column;min-height:0;">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #e4e4e4;background:#f5f5f5;flex-shrink:0;">
+      <span style="font-weight:600;font-size:13px;">任务</span>
+      <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        <div style="height:26px;padding:0 10px;border:1px solid #cfcfcf;border-radius:4px;background:#fff;font-size:11.5px;color:#777;display:flex;align-items:center;gap:8px;">按状态筛选 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div>
+      </div>
+    </div>
+    <div style="flex:1;display:flex;min-height:0;">
+      <!-- job list -->
+      <div class="hc-scroll" style="flex:0 0 340px;border-right:1px solid #e4e4e4;overflow:auto;">
+        <sc-for list="{{ jobs }}" as="j" hint-placeholder-count="3">
+          <div onClick="{{ j.select }}" style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #f0f0f0;cursor:pointer;background:{{ j.rowBg }};" style-hover="background:#f2f7f3;">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{ j.statusColor }};flex-shrink:0;"></span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12.5px;font-family:'IBM Plex Mono',monospace;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ j.wf }}</div>
+              <div style="font-size:11px;color:#9a9a9a;margin-top:2px;">{{ j.time }}</div>
+            </div>
+            <span style="padding:1px 8px;border-radius:3px;font-size:10.5px;font-weight:500;background:{{ j.statusBg }};color:{{ j.statusColor }};border:1px solid {{ j.statusBorder }};">{{ j.statusLabel }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <!-- artifacts -->
+      <div class="hc-scroll" style="flex:1;overflow:auto;padding:16px;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:12px;">reconstruct_pointcloud — 产物</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="color:#6d6d6d;text-align:left;"><th style="padding:6px 8px;font-weight:500;border-bottom:1px solid #e0e0e0;">步骤</th><th style="padding:6px 8px;font-weight:500;border-bottom:1px solid #e0e0e0;">输出</th><th style="padding:6px 8px;font-weight:500;border-bottom:1px solid #e0e0e0;">路径</th><th style="padding:6px 8px;font-weight:500;border-bottom:1px solid #e0e0e0;width:150px;">操作</th></tr></thead>
+          <tbody>
+            <sc-for list="{{ artifacts }}" as="a" hint-placeholder-count="2">
+              <tr style="border-bottom:1px solid #f0f0f0;">
+                <td style="padding:8px;font-family:'IBM Plex Mono',monospace;">{{ a.step }}</td>
+                <td style="padding:8px;color:#555;">{{ a.out }}</td>
+                <td style="padding:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#666;">{{ a.path }}</td>
+                <td style="padding:8px;"><div style="display:flex;gap:5px;"><button style="height:23px;padding:0 8px;background:#fff;border:1px solid #cfcfcf;border-radius:3px;font-size:10.5px;color:#333;cursor:pointer;">文件管理器</button><button style="height:23px;padding:0 8px;background:#fff;border:1px solid #cfcfcf;border-radius:3px;font-size:10.5px;color:#333;cursor:pointer;">查看</button></div></td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ OPERATORS VIEW ============ -->
+  <sc-if value="{{ isOperators }}" hint-placeholder-val="{{ true }}">
+  <div class="hc-scroll" style="flex:1;overflow:auto;">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid #e4e4e4;background:#f5f5f5;position:sticky;top:0;">
+      <span style="font-weight:600;font-size:13px;">算子管理</span>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <input placeholder="输入镜像地址 (如 hera-glim-recon:r0.5)…" style="height:28px;width:300px;padding:0 10px;border:1px solid #c6c6c6;border-radius:4px;font-size:12px;font-family:'IBM Plex Mono',monospace;" />
+        <button style="height:28px;padding:0 12px;background:linear-gradient(#4bd85e,#33bf47);border:1px solid #2ba63d;border-radius:4px;font-size:12px;font-weight:600;color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>添加</button>
+        <button style="height:28px;padding:0 12px;background:linear-gradient(#fff,#f0f0f0);border:1px solid #c6c6c6;border-radius:4px;font-size:12px;color:#333;cursor:pointer;">导入 tar</button>
+      </div>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+      <sc-for list="{{ operators }}" as="op" hint-placeholder-count="3">
+        <div style="background:#fff;border:1px solid #e2e2e2;border-radius:6px;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f7f7f7;border-bottom:1px solid #eee;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+            <span style="font-weight:600;font-size:13px;font-family:'IBM Plex Mono',monospace;">{{ op.id }}</span>
+            <span style="font-size:11.5px;color:#9a9a9a;">{{ op.verCount }}</span>
+          </div>
+          <div style="padding:10px 14px;display:flex;flex-direction:column;gap:8px;">
+            <sc-for list="{{ op.versions }}" as="v" hint-placeholder-count="2">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:#fafafa;border:1px solid #eee;border-radius:5px;">
+                <span style="padding:1px 8px;border-radius:3px;font-size:11px;background:rgba(65,205,82,.14);color:#199a3e;border:1px solid rgba(65,205,82,.3);font-family:'IBM Plex Mono',monospace;">{{ v.v }}</span>
+                <span style="font-size:11.5px;color:#777;font-family:'IBM Plex Mono',monospace;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ v.ref }}</span>
+                <span style="padding:1px 8px;border-radius:3px;font-size:10.5px;background:{{ v.srcBg }};color:{{ v.srcColor }};border:1px solid {{ v.srcBorder }};">{{ v.src }}</span>
+                <span style="font-size:11px;color:#a0a0a0;">{{ v.time }}</span>
+                <button style="height:23px;padding:0 8px;background:#fff;border:1px solid #cfcfcf;border-radius:3px;font-size:10.5px;color:#333;cursor:pointer;">查看</button>
+                <button style="height:23px;width:26px;background:#fff;border:1px solid #e0bcbc;border-radius:3px;color:#c0393e;cursor:pointer;display:flex;align-items:center;justify-content:center;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg></button>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- ============ SETTINGS VIEW ============ -->
+  <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ true }}">
+  <div class="hc-scroll" style="flex:1;overflow:auto;padding:20px;">
+    <div style="font-weight:600;font-size:14px;margin-bottom:16px;">设置</div>
+    <div style="max-width:640px;background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:18px;">
+      <div style="font-weight:600;font-size:12.5px;margin-bottom:12px;color:#444;">运行时</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-bottom:8px;">
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">容器运行时 <span style="color:#b0b0b0;">— docker 或 podman</span></span><input value="docker" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;" /></label>
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">启用 GPU</span><div style="height:28px;display:flex;align-items:center;"><span style="width:38px;height:20px;border-radius:10px;background:#d4d4d4;position:relative;display:inline-block;"><span style="position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);"></span></span></div></label>
+      </div>
+      <div style="height:1px;background:#eee;margin:14px 0;"></div>
+      <div style="font-weight:600;font-size:12.5px;margin-bottom:12px;color:#444;">目录</div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">输出目录 <span style="color:#b0b0b0;">— 留空则使用 ./hera-output</span></span><input placeholder="留空使用默认值" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;" /></label>
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">数据目录 <span style="color:#b0b0b0;">— 默认扫描路径</span></span><input value="/home/fred/Data" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;" /></label>
+        <label style="display:flex;flex-direction:column;gap:5px;"><span style="font-size:11.5px;color:#7a7a7a;">GLIM 配置目录 <span style="color:#b0b0b0;">— 留空自动缓存到 ~/.cache/hera</span></span><input placeholder="留空使用默认值" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;" /></label>
+      </div>
+      <div style="height:1px;background:#eee;margin:14px 0;"></div>
+      <div style="font-weight:600;font-size:12.5px;margin-bottom:12px;color:#444;">外部工具</div>
+      <label style="display:flex;flex-direction:column;gap:5px;margin-bottom:16px;"><span style="font-size:11.5px;color:#7a7a7a;">点云查看器 <span style="color:#b0b0b0;">— 如 cloudcompare、meshlab</span></span><input value="cloudcompare" style="height:28px;padding:0 9px;border:1px solid #c6c6c6;border-radius:4px;font-size:12.5px;font-family:'IBM Plex Mono',monospace;max-width:280px;" /></label>
+      <button style="height:30px;padding:0 16px;background:linear-gradient(#4bd85e,#33bf47);border:1px solid #2ba63d;border-radius:5px;font-size:12.5px;font-weight:600;color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5V3h11l5 5v13z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>保存</button>
+    </div>
+  </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:900,&quot;height&quot;:560},&quot;view&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;run&quot;,&quot;options&quot;:[&quot;data&quot;,&quot;run&quot;,&quot;tasks&quot;,&quot;operators&quot;,&quot;settings&quot;],&quot;tsType&quot;:&quot;string&quot;},&quot;wf&quot;:{&quot;editor&quot;:null,&quot;default&quot;:null,&quot;tsType&quot;:&quot;string&quot;},&quot;running&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;},&quot;steps&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;onRun&quot;:{&quot;editor&quot;:null},&quot;onBack&quot;:{&quot;editor&quot;:null},&quot;onSelectWf&quot;:{&quot;editor&quot;:null}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const view = p.view || "run";
+    const wf = p.wf || null;
+    const running = !!p.running;
+    const steps = p.steps || {};
+
+    const badge = (bg, color, border) => ({ badgeBg: bg, badgeColor: color, badgeBorder: border });
+    const TYPE = {
+      hera: badge("rgba(183,121,31,.12)", "#b7791f", "rgba(183,121,31,.3)"),
+      db3: badge("rgba(124,77,196,.12)", "#7c4dc4", "rgba(124,77,196,.3)"),
+      bag: badge("rgba(207,58,63,.12)", "#cf3a3f", "rgba(207,58,63,.3)"),
+      pointcloud: badge("rgba(25,154,62,.12)", "#199a3e", "rgba(25,154,62,.3)"),
+    };
+    const datasets = [
+      { path: "/home/fred/Data/warehouse_scan_01.hera", type: "hera", size: "1.24 GB", time: "07-03 18:30" },
+      { path: "/home/fred/Data/basement_loop.db3", type: "db3", size: "340 MB", time: "07-03 16:02" },
+      { path: "/home/fred/Data/rooftop_survey.hera", type: "hera", size: "2.08 GB", time: "07-02 11:47" },
+      { path: "/home/fred/Data/exports/warehouse_map.ply", type: "pointcloud", size: "512 MB", time: "07-03 19:10" },
+      { path: "/home/fred/Data/legacy/session_44.bag", type: "bag", size: "890 MB", time: "06-28 09:15" },
+    ].map((d) => ({ ...d, ...TYPE[d.type] }));
+
+    const workflows = [
+      { id: "reconstruct_pointcloud", name: "激光重建出点云", desc: "输入 .hera / .db3 文件，经 GLIM 重建后导出稠密点云", exts: [".hera", ".db3"] },
+      { id: "hera_to_bag", name: "转 ROS bag", desc: "将 .hera 文件转换为 ROS2 .db3 rosbag，便于回放与调试", exts: [".hera"] },
+    ].map((w) => ({ ...w, pick: () => p.onSelectWf && p.onSelectWf(w.id) }));
+
+    const wfName = wf === "hera_to_bag" ? "转 ROS bag" : "激光重建出点云";
+
+    const stepDef = [
+      { id: "step_recon", label: "step_recon" },
+      { id: "step_export", label: "step_export" },
+    ];
+    const stateMap = {
+      pending: { dotColor: "#c2c2c2", stateLabel: "pending", dotAnim: "" },
+      running: { dotColor: "#199a3e", stateLabel: "running", dotAnim: "animation:hc-pulse .8s ease-in-out infinite;" },
+      done: { dotColor: "#199a3e", stateLabel: "done", dotAnim: "" },
+      failed: { dotColor: "#cf3a3f", stateLabel: "failed", dotAnim: "" },
+    };
+    const stepRows = stepDef.map((s) => ({ ...s, ...stateMap[steps[s.id] || "pending"] }));
+
+    const STAT = {
+      success: { statusColor: "#199a3e", statusBg: "rgba(25,154,62,.12)", statusBorder: "rgba(25,154,62,.3)", statusLabel: "成功" },
+      failed: { statusColor: "#cf3a3f", statusBg: "rgba(207,58,63,.12)", statusBorder: "rgba(207,58,63,.3)", statusLabel: "失败" },
+      running: { statusColor: "#2f6fd0", statusBg: "rgba(47,111,208,.12)", statusBorder: "rgba(47,111,208,.3)", statusLabel: "运行中" },
+    };
+    const jobs = [
+      { id: "j1", wf: "reconstruct_pointcloud", status: "success", time: "07-03 18:39", sel: true },
+      { id: "j2", wf: "hera_to_bag", status: "failed", time: "07-03 18:33", sel: false },
+      { id: "j3", wf: "reconstruct_pointcloud", status: "running", time: "07-03 18:29", sel: false },
+    ].map((j) => ({ ...j, ...STAT[j.status], rowBg: j.sel ? "#eef7f0" : "transparent", select: () => {} }));
+
+    const artifacts = [
+      { step: "step_recon", out: "map", path: "…/step_recon/map" },
+      { step: "step_export", out: "pointcloud", path: "…/exports/warehouse_map.ply" },
+    ];
+
+    const SRC = {
+      registry: { srcBg: "rgba(25,154,62,.12)", srcColor: "#199a3e", srcBorder: "rgba(25,154,62,.3)" },
+      tar: { srcBg: "rgba(183,121,31,.12)", srcColor: "#b7791f", srcBorder: "rgba(183,121,31,.3)" },
+    };
+    const operators = [
+      { id: "glim-recon", versions: [
+        { v: "r0.5", ref: "crpi-abc.cr.aliyuncs.com/hera/glim-recon:r0.5", src: "registry", time: "07-01 10:00" },
+        { v: "r0.4", ref: "crpi-abc.cr.aliyuncs.com/hera/glim-recon:r0.4", src: "registry", time: "06-20 14:12" },
+      ] },
+      { id: "glim-export-pcd", versions: [
+        { v: "local", ref: "hera-export-pcd:local", src: "tar", time: "07-02 09:30" },
+      ] },
+      { id: "hera-convert", versions: [
+        { v: "r0.3", ref: "crpi-abc.cr.aliyuncs.com/hera/hera-convert:r0.3", src: "registry", time: "06-15 17:45" },
+      ] },
+    ].map((op) => ({
+      ...op,
+      verCount: op.versions.length + " 个版本",
+      versions: op.versions.map((v) => ({ ...v, ...SRC[v.src] })),
+    }));
+
+    return {
+      view, wf, running, wfName,
+      isData: view === "data",
+      isTasks: view === "tasks",
+      isOperators: view === "operators",
+      isSettings: view === "settings",
+      showPicker: view === "run" && !wf,
+      showConfig: view === "run" && !!wf,
+      onBack: p.onBack || (() => {}),
+      onRun: p.onRun || (() => {}),
+      datasets, workflows, stepRows, jobs, artifacts, operators,
+    };
+  }
+}
+</script>
+</body>
+</html>

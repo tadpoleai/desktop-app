@@ -1,0 +1,42 @@
+{
+  "id": "reconstruct_pointcloud",
+  "name": "激光重建出点云",
+  "description": "输入 .hera/.db3 文件，经 GLIM 重建后导出点云 .ply/.pcd/.csv",
+  "input": {
+    "type": "file",
+    "ext": [".hera", ".db3"],
+    "label": "输入扫描文件"
+  },
+  "nodes": [
+    {
+      "id": "step_recon",
+      "operator": "glim-recon",
+      "params": {
+        "window": 0.1,
+        "mounting_rpy": [0, 0, 0],
+        "mode": "cpu",
+        "imu_topic": "/imu/data",
+        "points_topic": "/livox/lidar"
+      }
+    },
+    {
+      "id": "step_export",
+      "operator": "glim-export-pcd",
+      "params": {
+        "format": "ply"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "step_recon",
+      "from_output": "map",
+      "to_node": "step_export",
+      "to_input": "map"
+    }
+  ],
+  "workflow_input_to": {
+    "node": "step_recon",
+    "input": "scan"
+  }
+}

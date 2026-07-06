@@ -1,0 +1,36 @@
+{
+  "id": "glim-export-pcd",
+  "name": "点云导出",
+  "version": "0.1",
+  "image": "hera-export-pcd:local",
+  "gpu": "none",
+  "mounts": [],
+  "inputs": [
+    {
+      "id": "map",
+      "type": "dir",
+      "container": "/input/map"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cloud",
+      "type": "file",
+      "container": "/output/map_export.ply"
+    }
+  ],
+  "params": [
+    {
+      "id": "format",
+      "type": "enum",
+      "values": ["ply", "pcd", "csv"],
+      "default": "ply",
+      "label": "输出格式",
+      "inject": {
+        "mode": "arg",
+        "flag": "--format"
+      }
+    }
+  ],
+  "command": "python3 /opt/scripts/export_map_pcd.py /input/map -o {out:cloud} --format {param:format}"
+}

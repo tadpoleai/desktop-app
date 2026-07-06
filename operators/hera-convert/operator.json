@@ -1,0 +1,66 @@
+{
+  "id": "hera-convert",
+  "name": "Hera→ROS bag",
+  "version": "0.1",
+  "image": "crpi-wzvoh0tsm7bwb22w.cn-shanghai.personal.cr.aliyuncs.com/glim/hera-convert:latest",
+  "gpu": "none",
+  "mounts": [],
+  "inputs": [
+    {
+      "id": "raw",
+      "type": "file",
+      "ext": [".hera"],
+      "container": "/data/input"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "bag",
+      "type": "file",
+      "container": "/output/out.db3"
+    }
+  ],
+  "params": [
+    {
+      "id": "window",
+      "type": "number",
+      "default": 0.1,
+      "label": "时间窗口(秒)",
+      "inject": {
+        "mode": "arg",
+        "flag": "--window"
+      }
+    },
+    {
+      "id": "imu_topic",
+      "type": "string",
+      "default": "/lidar/mid360/imu",
+      "label": "IMU Topic",
+      "inject": {
+        "mode": "arg",
+        "flag": "--imu-topic"
+      }
+    },
+    {
+      "id": "points_topic",
+      "type": "string",
+      "default": "/lidar/mid360/point_cloud2",
+      "label": "点云 Topic",
+      "inject": {
+        "mode": "arg",
+        "flag": "--points-topic"
+      }
+    },
+    {
+      "id": "verbose",
+      "type": "bool",
+      "default": false,
+      "label": "详细输出",
+      "inject": {
+        "mode": "arg",
+        "flag": "-v"
+      }
+    }
+  ],
+  "command": "hera_to_rosbag {in:raw} -o {out:bag} --window {param:window} --imu-topic {param:imu_topic} --points-topic {param:points_topic} {param:verbose}"
+}

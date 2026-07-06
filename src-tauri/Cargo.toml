@@ -1,0 +1,28 @@
+[package]
+name = "hera-desktop"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "hera_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "hera-desktop"
+path = "src/main.rs"
+
+[dependencies]
+hera-runner = { path = "../runner" }
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+uuid = { version = "1", features = ["v4"] }
+walkdir = "2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

@@ -1,0 +1,38 @@
+# Hera Desktop 运行时配置示例
+# 复制为 config.toml 并按实际路径修改
+
+[runtime]
+# 容器运行时: "docker" 或 "podman"
+container = "docker"
+
+# GPU 支持: true = --gpus all; false = 不传 GPU 参数
+gpu_enabled = false
+
+[data]
+# 数据扫描目录（UI 中可覆盖）
+data_dir = "/home/fred/Data"
+
+# 任务产物输出根目录（每个 job 生成子目录）
+output_dir = "/home/fred/Data/hera-output"
+
+# GLIM config 目录（含 config.json / config_sensors.json 等）
+# 首次运行前执行: hera-run extract-config glim-recon
+# 它会自动从镜像提取 config 并打印此路径。
+# 提取后把路径填到下面（也可以留空，runner 会自动提取到 ~/.cache/hera/glim-recon/config/）
+# glim_config_dir = "/home/fred/.cache/hera/glim-recon/config"
+
+# 自动提取 config 的缓存目录（留空则用 ~/.cache/hera）
+# config_cache_dir = "/home/fred/.cache/hera"
+
+[viewers]
+# 外部点云查看器（留空则只提供「打开所在文件夹」）
+# pointcloud_viewer = "/usr/bin/cloudcompare"
+
+[registry]
+db_path = "./registry.sqlite"
+
+[acr]
+# 私有镜像仓库（如需 docker login）
+# 凭据放 .env 或环境变量 HERA_REGISTRY_PASSWORD，不要写在此文件里
+# registry_url = "crpi-wzvoh0tsm7bwb22w.cn-shanghai.personal.cr.aliyuncs.com"
+# username = ""

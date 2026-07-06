@@ -1,0 +1,15 @@
+target/
+dist/
+node_modules/
+registry.sqlite
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+config.toml
+.env
+*.db
+gen/
+hera-output/
+.DS_Store
+*.bak
+design/*.zip

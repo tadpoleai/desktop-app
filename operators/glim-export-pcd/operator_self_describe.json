@@ -1,0 +1,47 @@
+{
+  "spec": "1",
+  "id": "glim-export-pcd",
+  "name": "点云导出",
+  "version": "0.1",
+  "gpu": "none",
+  "mounts": [],
+  "inputs": [
+    {
+      "id": "map",
+      "type": "dir",
+      "container": "/input/map"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "cloud",
+      "type": "file",
+      "container": "/output/map_export.ply"
+    }
+  ],
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "format": {
+        "type": "string",
+        "enum": ["ply", "pcd", "csv"],
+        "default": "ply",
+        "title": "输出格式"
+      }
+    }
+  },
+  "params_bindings": {
+    "format": { "mode": "arg", "flag": "--format" }
+  },
+  "params": [
+    {
+      "id": "format",
+      "type": "enum",
+      "values": ["ply", "pcd", "csv"],
+      "default": "ply",
+      "label": "输出格式",
+      "inject": { "mode": "arg", "flag": "--format" }
+    }
+  ],
+  "command": "python3 /opt/scripts/export_map_pcd.py /input/map -o {out:cloud} --format {param:format}"
+}

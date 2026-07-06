@@ -1,0 +1,27 @@
+{
+  "id": "hera_to_bag",
+  "name": "转 ROS bag",
+  "description": "输入 .hera 文件，转换为 ROS2 .db3 bag",
+  "input": {
+    "type": "file",
+    "ext": [".hera"],
+    "label": "输入 .hera 文件"
+  },
+  "nodes": [
+    {
+      "id": "step_convert",
+      "operator": "hera-convert",
+      "params": {
+        "window": 0.1,
+        "imu_topic": "/lidar/mid360/imu",
+        "points_topic": "/lidar/mid360/point_cloud2",
+        "verbose": false
+      }
+    }
+  ],
+  "edges": [],
+  "workflow_input_to": {
+    "node": "step_convert",
+    "input": "raw"
+  }
+}
