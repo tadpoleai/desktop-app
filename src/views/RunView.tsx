@@ -1,13 +1,19 @@
 import React from "react";
-import { Form, Input, Select } from "antd";
 import { open } from "@tauri-apps/plugin-dialog";
-import { api, WorkflowDetail, WorkflowSummary, JobEvent, ParamSchema, NodeDetail } from "../api";
+import { api, WorkflowDetail, WorkflowSummary, JobEvent, NodeDetail } from "../api";
 import { toast } from "../components/toast";
-import Form2 from "@rjsf/antd";
-import validator from "@rjsf/validator-ajv8";
-import type { RJSFSchema } from "@rjsf/utils";
 
 type StepState = "pending" | "running" | "done" | "failed";
+
+type SchemaProp = {
+  type?: string;
+  enum?: string[];
+  default?: unknown;
+  title?: string;
+  description?: string;
+  maxItems?: number;
+  items?: { type?: string };
+};
 
 interface Props {
   onCrumbChange?: (s: string) => void;
@@ -20,15 +26,13 @@ export function RunView({ onCrumbChange }: Props) {
   const [jobId, setJobId] = React.useState<string | null>(null);
   const [stepStates, setStepStates] = React.useState<Record<string, StepState>>({});
   const [running, setRunning] = React.useState(false);
-  const [rjsfData, setRjsfData] = React.useState<Record<string, Record<string, unknown>>>({});
+  const [paramData, setParamData] = React.useState<Record<string, Record<string, unknown>>>({});
   const [nodeVersions, setNodeVersions] = React.useState<Record<string, string>>({});
-  const [form] = Form.useForm();
 
   React.useEffect(() => {
     api.listWorkflows().then(setWorkflows).catch(() => {});
   }, []);
 
-  // Subscribe to job events for step states
   React.useEffect(() => {
     let unlisten: (() => void) | null = null;
     api.onJobEvent(handleEvent).then((fn) => { unlisten = fn; });
@@ -38,21 +42,11 @@ export function RunView({ onCrumbChange }: Props) {
   function handleEvent(ev: JobEvent) {
     if (jobId && ev.job !== jobId) return;
     switch (ev.type) {
-      case "step_start":
-        setStepStates((s) => ({ ...s, [ev.step!]: "running" }));
-        break;
-      case "step_complete":
-        setStepStates((s) => ({ ...s, [ev.step!]: "done" }));
-        break;
-      case "step_failed":
-        setStepStates((s) => ({ ...s, [ev.step!]: "failed" }));
-        break;
-      case "job_complete":
-        setRunning(false);
-        break;
-      case "job_failed":
-        setRunning(false);
-        break;
+      case "step_start":    setStepStates((s) => ({ ...s, [ev.step!]: "running" })); break;
+      case "step_complete": setStepStates((s) => ({ ...s, [ev.step!]: "done" }));    break;
+      case "step_failed":   setStepStates((s) => ({ ...s, [ev.step!]: "failed" }));  break;
+      case "job_complete":  setRunning(false); break;
+      case "job_failed":    setRunning(false); break;
     }
   }
 
@@ -64,29 +58,23 @@ export function RunView({ onCrumbChange }: Props) {
     setStepStates({});
     onCrumbChange?.(wf.name + " › 配置与执行");
 
-    const rjsf: Record<string, Record<string, unknown>> = {};
+    const data: Record<string, Record<string, unknown>> = {};
     const versions: Record<string, string> = {};
     for (const node of wf.nodes) {
       versions[node.id] = node.version ?? "latest";
+      const defaults: Record<string, unknown> = {};
       if (node.params_schema) {
-        const props = (node.params_schema as { properties?: Record<string, { default?: unknown }> }).properties ?? {};
-        const defaults: Record<string, unknown> = {};
+        const props = (node.params_schema as { properties?: Record<string, SchemaProp> }).properties ?? {};
         for (const [k, v] of Object.entries(props)) {
           if ("default" in v) defaults[k] = v.default;
         }
-        rjsf[node.id] = { ...defaults, ...node.params };
+      } else {
+        for (const p of node.param_schema) defaults[p.id] = p.default;
       }
+      data[node.id] = { ...defaults, ...node.params };
     }
-    setRjsfData(rjsf);
+    setParamData(data);
     setNodeVersions(versions);
-
-    const values: Record<string, unknown> = {};
-    for (const node of wf.nodes) {
-      for (const p of node.param_schema) {
-        values[`${node.id}__${p.id}`] = node.params[p.id] ?? p.default;
-      }
-    }
-    form.setFieldsValue(values);
   }
 
   function goBack() {
@@ -98,8 +86,7 @@ export function RunView({ onCrumbChange }: Props) {
     if (!selected) return;
     const isDir = selected.input.type === "dir";
     const result = await open({
-      directory: isDir,
-      multiple: false,
+      directory: isDir, multiple: false,
       filters: !isDir && selected.input.ext
         ? [{ name: "Input files", extensions: selected.input.ext.map((e) => e.replace(".", "")) }]
         : undefined,
@@ -109,40 +96,23 @@ export function RunView({ onCrumbChange }: Props) {
 
   async function startRun() {
     if (!inputPath.trim() || !selected) return;
-
     const paramOverrides: Record<string, Record<string, unknown>> = {};
-    for (const node of selected.nodes) {
-      if (node.params_schema) {
-        paramOverrides[node.id] = rjsfData[node.id] ?? {};
-      } else {
-        const values = form.getFieldsValue();
-        paramOverrides[node.id] = {};
-        for (const p of node.param_schema) {
-          const key = `${node.id}__${p.id}`;
-          if (key in values) paramOverrides[node.id][p.id] = values[key];
-        }
-      }
-    }
-
+    for (const node of selected.nodes) paramOverrides[node.id] = paramData[node.id] ?? {};
     const initStates: Record<string, StepState> = {};
     for (const node of selected.nodes) initStates[node.id] = "pending";
     setStepStates(initStates);
     setRunning(true);
-
     try {
       const jid = await api.runWorkflow(selected.id, inputPath.trim(), paramOverrides);
       setJobId(jid);
-    } catch (e: unknown) {
+    } catch (e) {
       toast.error(`启动失败: ${e}`);
       setRunning(false);
     }
   }
 
   async function cancelRun() {
-    if (jobId) {
-      await api.cancelJob(jobId);
-      setRunning(false);
-    }
+    if (jobId) { await api.cancelJob(jobId); setRunning(false); }
   }
 
   async function onVersionChange(nodeId: string, version: string) {
@@ -150,32 +120,25 @@ export function RunView({ onCrumbChange }: Props) {
     if (!selected) return;
     try {
       const manifest = await api.operatorDescribe(
-        selected.nodes.find((n) => n.id === nodeId)?.operator ?? nodeId,
-        version,
-      ) as { params_schema?: { properties?: Record<string, { default?: unknown }> } } | null;
-      if (manifest?.params_schema) {
-        const props = manifest.params_schema.properties ?? {};
+        selected.nodes.find((n) => n.id === nodeId)?.operator ?? nodeId, version,
+      ) as { params_schema?: { properties?: Record<string, SchemaProp> } } | null;
+      if (manifest?.params_schema?.properties) {
         const defaults: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(props)) {
+        for (const [k, v] of Object.entries(manifest.params_schema.properties)) {
           if ("default" in v) defaults[k] = v.default;
         }
-        setRjsfData((d) => ({ ...d, [nodeId]: defaults }));
-        setSelected((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            nodes: prev.nodes.map((n) =>
-              n.id === nodeId
-                ? { ...n, params_schema: manifest.params_schema as Record<string, unknown> }
-                : n
-            ),
-          };
-        });
+        setParamData((d) => ({ ...d, [nodeId]: defaults }));
+        setSelected((prev) => prev ? {
+          ...prev,
+          nodes: prev.nodes.map((n) =>
+            n.id === nodeId ? { ...n, params_schema: manifest.params_schema as Record<string, unknown> } : n
+          ),
+        } : prev);
       }
     } catch { /* ignore */ }
   }
 
-  // ── Workflow picker ──
+  // ── Workflow picker ──────────────────────────────────────────────────────────
   if (!selected) {
     return (
       <div className="hs-view">
@@ -194,60 +157,77 @@ export function RunView({ onCrumbChange }: Props) {
     );
   }
 
-  // ── Config + run ──
+  // ── Config + run ─────────────────────────────────────────────────────────────
   return (
     <div className="hs-view">
-      {/* Sub-toolbar */}
-      <div className="hs-view-toolbar">
-        <button className="hs-btn hs-btn-sm" onClick={goBack}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
-          返回
-        </button>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>{selected.name}</span>
-      </div>
-
       <div className="hs-view-body" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
 
-        {/* Input file/dir */}
-        <div className="hs-panel">
-          <div className="hs-panel-bd" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            <div style={{ fontSize: 12, color: "#6d6d6d" }}>{selected.input.label}</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                className="hs-input mono"
-                style={{ flex: 1 }}
-                value={inputPath}
-                onChange={(e) => setInputPath(e.target.value)}
-                placeholder="输入路径，或点击右侧浏览…"
-              />
-              <button className="hs-btn" onClick={browseInput}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>
-                浏览
-              </button>
-            </div>
+        {/* Back + workflow name */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button
+            className="hs-btn"
+            style={{ height: 26, padding: "0 10px", fontSize: 12 }}
+            onClick={goBack}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+            返回
+          </button>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>{selected.name}</span>
+        </div>
+
+        {/* Input file / dir */}
+        <div style={{ background: "#fff", border: "1px solid #e2e2e2", borderRadius: 6, padding: 14 }}>
+          <div style={{ fontSize: 12, color: "#6d6d6d", marginBottom: 7 }}>
+            {selected.input.label}
+            {selected.input.ext?.map((e) => (
+              <span key={e} className="hs-tag hs-tag-gray mono" style={{ fontSize: 10.5, marginLeft: 6 }}>{e}</span>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              className="hs-input mono"
+              style={{ flex: 1 }}
+              value={inputPath}
+              onChange={(e) => setInputPath(e.target.value)}
+              placeholder="输入路径，或点击右侧浏览…"
+            />
+            <button className="hs-btn" onClick={browseInput}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>
+              浏览
+            </button>
           </div>
         </div>
 
-        {/* Param forms per node */}
+        {/* Param panels per node */}
         {selected.nodes.map((node) => (
-          <NodeParamCard
+          <NodeParamPanel
             key={node.id}
             node={node}
             version={nodeVersions[node.id] ?? node.version ?? "latest"}
-            rjsfFormData={rjsfData[node.id] ?? {}}
-            legacyForm={form}
+            paramData={paramData[node.id] ?? {}}
             onVersionChange={(v) => onVersionChange(node.id, v)}
-            onRjsfChange={(data) => setRjsfData((d) => ({ ...d, [node.id]: data }))}
+            onChange={(id, val) => setParamData((d) => ({
+              ...d,
+              [node.id]: { ...(d[node.id] ?? {}), [id]: val },
+            }))}
           />
         ))}
 
         {/* Run / Cancel */}
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <button
-            className="hs-btn hs-btn-primary"
-            style={{ height: 32, fontSize: 13 }}
             onClick={startRun}
             disabled={running || !inputPath.trim()}
+            style={{
+              height: 32, padding: "0 16px",
+              background: "linear-gradient(#4bd85e, #33bf47)",
+              border: "1px solid #2ba63d", borderRadius: 5,
+              fontSize: 13, fontWeight: 600, color: "#fff",
+              cursor: running || !inputPath.trim() ? "not-allowed" : "pointer",
+              display: "inline-flex", alignItems: "center", gap: 7,
+              boxShadow: "0 1px 2px rgba(0,0,0,.12)", fontFamily: "inherit",
+              opacity: running || !inputPath.trim() ? 0.5 : 1,
+            }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             运行
@@ -255,9 +235,13 @@ export function RunView({ onCrumbChange }: Props) {
           {running && (
             <>
               <button
-                className="hs-btn"
-                style={{ borderColor: "#d88", color: "#cf3a3f" }}
                 onClick={cancelRun}
+                style={{
+                  height: 32, padding: "0 14px", background: "#fff",
+                  border: "1px solid #d88", borderRadius: 5, fontSize: 13,
+                  color: "#c0393e", cursor: "pointer", display: "inline-flex",
+                  alignItems: "center", gap: 7, fontFamily: "inherit",
+                }}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
                 取消
@@ -274,20 +258,18 @@ export function RunView({ onCrumbChange }: Props) {
 
         {/* Progress steps */}
         {Object.keys(stepStates).length > 0 && (
-          <div className="hs-panel">
-            <div className="hs-panel-hd">
-              <span style={{ fontSize: 12, color: "#6d6d6d" }}>进度</span>
-            </div>
-            <div className="hs-panel-bd" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ background: "#fff", border: "1px solid #e2e2e2", borderRadius: 6, padding: "12px 14px" }}>
+            <div style={{ fontSize: 12, color: "#6d6d6d", marginBottom: 10 }}>进度</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {selected.nodes.map((node) => {
                 const state = stepStates[node.id] ?? "pending";
-                const stateLabels: Record<string, string> = { pending: "等待", running: "运行中", done: "完成", failed: "失败" };
-                const stateColors: Record<string, string> = { pending: "#c2c2c2", running: "#199a3e", done: "#199a3e", failed: "#cf3a3f" };
+                const stateLabel = { pending: "等待", running: "运行中", done: "完成", failed: "失败" }[state];
+                const stateColor = { pending: "#c2c2c2", running: "#199a3e", done: "#199a3e", failed: "#cf3a3f" }[state];
                 return (
                   <div key={node.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", background: "#f7f7f7", borderRadius: 4 }}>
                     <span className={`hs-dot ${state}`} />
                     <span style={{ fontSize: 12.5, fontFamily: "'IBM Plex Mono', monospace" }}>{node.id}</span>
-                    <span style={{ marginLeft: "auto", fontSize: 11.5, color: stateColors[state] }}>{stateLabels[state]}</span>
+                    <span style={{ marginLeft: "auto", fontSize: 11.5, color: stateColor }}>{stateLabel}</span>
                   </div>
                 );
               })}
@@ -299,7 +281,8 @@ export function RunView({ onCrumbChange }: Props) {
   );
 }
 
-// ── Workflow picker card ──
+// ── Workflow picker card ──────────────────────────────────────────────────────
+
 function WfCard({ wf, onPick }: { wf: WorkflowSummary; onPick: () => void }) {
   const [hovered, setHovered] = React.useState(false);
   return (
@@ -333,105 +316,174 @@ function WfCard({ wf, onPick }: { wf: WorkflowSummary; onPick: () => void }) {
   );
 }
 
-// ── Node param card ──
-interface NodeParamCardProps {
+// ── Node param panel (3-col native grid) ─────────────────────────────────────
+
+interface NodeParamPanelProps {
   node: NodeDetail;
   version: string;
-  rjsfFormData: Record<string, unknown>;
-  legacyForm: ReturnType<typeof Form.useForm>[0];
+  paramData: Record<string, unknown>;
   onVersionChange: (v: string) => void;
-  onRjsfChange: (data: Record<string, unknown>) => void;
+  onChange: (id: string, val: unknown) => void;
 }
 
-function NodeParamCard({ node, version, rjsfFormData, legacyForm, onVersionChange, onRjsfChange }: NodeParamCardProps) {
-  const hasRjsf = !!node.params_schema;
+function NodeParamPanel({ node, version, paramData, onVersionChange, onChange }: NodeParamPanelProps) {
+  const schemaProps = node.params_schema
+    ? (node.params_schema as { properties?: Record<string, SchemaProp> }).properties ?? {}
+    : null;
+
+  const entries: Array<{ id: string; schema: SchemaProp }> = schemaProps
+    ? Object.entries(schemaProps).map(([id, s]) => ({ id, schema: s }))
+    : node.param_schema.map((p) => ({
+        id: p.id,
+        schema: {
+          type: p.type === "bool" ? "boolean" : p.type === "number[3]" ? "array" : p.type === "enum" ? "string" : p.type,
+          enum: p.type === "enum" ? (p.values ?? []) : undefined,
+          default: p.default,
+          title: p.label ?? p.id,
+          description: p.description,
+          maxItems: p.type === "number[3]" ? 3 : undefined,
+        } as SchemaProp,
+      }));
 
   return (
-    <div className="hs-panel">
-      <div className="hs-panel-hd">
+    <div style={{ background: "#fff", border: "1px solid #e2e2e2", borderRadius: 6, overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 14px", borderBottom: "1px solid #eee", background: "#f7f7f7" }}>
         <span style={{ fontSize: 12, color: "#6d6d6d" }}>{node.operator} 参数</span>
         <span className="hs-tag hs-tag-green mono">{version}</span>
         {node.available_versions.length > 0 && (
-          <Select
-            size="small"
+          <select
+            className="hs-input"
+            style={{ height: 24, padding: "0 8px", fontSize: 11.5, marginLeft: "auto", cursor: "pointer", width: 140 }}
             value={version}
-            onChange={onVersionChange}
-            options={node.available_versions.map((v) => ({ label: v, value: v }))}
-            style={{ width: 140, marginLeft: 4 }}
-            placeholder="选择版本"
-          />
+            onChange={(e) => onVersionChange(e.target.value)}
+          >
+            {node.available_versions.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
         )}
       </div>
-      <div className="hs-panel-bd">
-        {hasRjsf ? (
-          <Form2
-            schema={node.params_schema as RJSFSchema}
-            formData={rjsfFormData}
-            validator={validator}
-            onChange={(e) => onRjsfChange(e.formData as Record<string, unknown>)}
-            uiSchema={{ "ui:submitButtonOptions": { norender: true } }}
-            liveValidate={false}
-          />
-        ) : (
-          <Form form={legacyForm} layout="vertical" size="small">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0 16px" }}>
-              {node.param_schema.map((p) => (
-                <LegacyParamField key={p.id} nodeId={node.id} param={p} form={legacyForm} />
-              ))}
-            </div>
-          </Form>
-        )}
-      </div>
+      {/* 3-column param grid */}
+      {entries.length > 0 ? (
+        <div style={{ padding: 14, display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "14px 16px" }}>
+          {entries.map(({ id, schema: s }) => {
+            const isArray = s.type === "array";
+            const span = isArray ? ((s.maxItems ?? 3) >= 7 ? 3 : 2) : 1;
+            return (
+              <label
+                key={id}
+                style={{ display: "flex", flexDirection: "column", gap: 5, gridColumn: span > 1 ? `span ${span}` : undefined }}
+              >
+                <span style={{ fontSize: 11.5, color: "#7a7a7a" }}>
+                  {s.title ?? id}
+                  {s.description && (
+                    <span style={{ color: "#b0b0b0", fontSize: 10.5, marginLeft: 4 }}>— {s.description}</span>
+                  )}
+                </span>
+                <ParamField
+                  id={id}
+                  schema={s}
+                  value={paramData[id] ?? s.default}
+                  onChange={(val) => onChange(id, val)}
+                />
+              </label>
+            );
+          })}
+        </div>
+      ) : (
+        <div style={{ padding: "12px 14px", fontSize: 12, color: "#9a9a9a" }}>无可配置参数</div>
+      )}
     </div>
   );
 }
 
-function LegacyParamField({ nodeId, param: p, form }: { nodeId: string; param: ParamSchema; form: ReturnType<typeof Form.useForm>[0] }) {
-  const name = `${nodeId}__${p.id}`;
-  const label = (
-    <span style={{ fontSize: 11, color: "#7a7a7a" }}>
-      {p.label ?? p.id}
-      {p.description && <span style={{ color: "#b0b0b0", fontSize: 10.5, marginLeft: 4 }}>— {p.description}</span>}
-    </span>
-  );
+// ── Param field (native, no RJSF) ────────────────────────────────────────────
 
-  if (p.type === "enum") {
+function ParamField({ id: _id, schema: s, value, onChange }: {
+  id: string;
+  schema: SchemaProp;
+  value: unknown;
+  onChange: (val: unknown) => void;
+}) {
+  const isEnum   = s.type === "string" && Array.isArray(s.enum) && s.enum.length > 0;
+  const isBool   = s.type === "boolean";
+  const isNumber = s.type === "number" || s.type === "integer";
+  const isArray  = s.type === "array";
+  const arrLen   = s.maxItems ?? 3;
+
+  if (isEnum) {
     return (
-      <Form.Item name={name} label={label}>
-        <Select size="small" options={(p.values ?? []).map((v) => ({ label: v, value: v }))} />
-      </Form.Item>
+      <select
+        className="hs-input"
+        style={{ width: "100%", cursor: "pointer" }}
+        value={String(value ?? s.default ?? "")}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {s.enum!.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+      </select>
     );
   }
-  if (p.type === "bool") {
+
+  if (isBool) {
+    const checked = Boolean(value ?? s.default);
     return (
-      <Form.Item name={name} label={label} valuePropName="checked">
-        <input type="checkbox" style={{ width: 14, height: 14 }} />
-      </Form.Item>
+      <div
+        onClick={() => onChange(!checked)}
+        style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 28, cursor: "pointer" }}
+      >
+        <span style={{
+          width: 38, height: 20, borderRadius: 10,
+          background: checked ? "#2ba63d" : "#d4d4d4",
+          position: "relative", display: "inline-block", transition: "background .15s", flexShrink: 0,
+        }}>
+          <span style={{
+            position: "absolute", top: 2, left: checked ? 18 : 2,
+            width: 16, height: 16, borderRadius: "50%",
+            background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.3)", transition: "left .15s",
+          }} />
+        </span>
+        <span style={{ fontSize: 12, color: "#555" }}>{checked ? "开启" : "关闭"}</span>
+      </div>
     );
   }
-  if (p.type === "number[3]") {
+
+  if (isArray) {
+    const arr = Array.isArray(value) ? (value as number[]) : Array.isArray(s.default) ? (s.default as number[]) : Array(arrLen).fill(0);
+    const LABELS = arrLen === 3 ? ["R", "P", "Y"] : arrLen === 7 ? ["x", "y", "z", "qx", "qy", "qz", "qw"] : Array.from({ length: arrLen }, (_, i) => String(i));
+    const W = arrLen >= 7 ? 54 : 70;
     return (
-      <Form.Item label={label} style={{ gridColumn: "span 2" }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          {[0, 1, 2].map((idx) => (
-            <Form.Item key={idx} name={[name, idx]} noStyle>
-              <Input size="small" style={{ width: 80, fontFamily: "'IBM Plex Mono', monospace", textAlign: "center" }} />
-            </Form.Item>
-          ))}
-        </div>
-      </Form.Item>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {Array.from({ length: arrLen }, (_, i) => (
+          <input
+            key={i}
+            className="hs-input mono"
+            type="number"
+            style={{ width: W, height: 28, padding: "0 6px", textAlign: "center", fontSize: 12 }}
+            title={LABELS[i]}
+            placeholder={LABELS[i]}
+            value={arr[i] ?? 0}
+            onChange={(e) => {
+              const next = [...arr];
+              while (next.length < arrLen) next.push(0);
+              next[i] = parseFloat(e.target.value) || 0;
+              onChange(next);
+            }}
+            step="any"
+          />
+        ))}
+      </div>
     );
   }
-  if (p.type === "number") {
-    return (
-      <Form.Item name={name} label={label}>
-        <Input size="small" style={{ fontFamily: "'IBM Plex Mono', monospace" }} />
-      </Form.Item>
-    );
-  }
+
   return (
-    <Form.Item name={name} label={label}>
-      <Input size="small" style={{ fontFamily: "'IBM Plex Mono', monospace" }} />
-    </Form.Item>
+    <input
+      className="hs-input mono"
+      style={{ width: "100%" }}
+      type={isNumber ? "number" : "text"}
+      value={String(value ?? s.default ?? "")}
+      onChange={(e) => onChange(isNumber ? (parseFloat(e.target.value) || 0) : e.target.value)}
+      step={isNumber ? "any" : undefined}
+    />
   );
 }

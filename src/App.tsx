@@ -245,6 +245,12 @@ export function App() {
                   <span className="hs-tab-cnt">0</span>
                   <span className="hs-tab-label">问题</span>
                 </button>
+                <button className="hs-output-tab" style={{ background: "none", border: "none" }}>
+                  <span className="hs-tab-label">搜索结果</span>
+                </button>
+                <button className="hs-output-tab" style={{ background: "none", border: "none" }}>
+                  <span className="hs-tab-label">编译输出</span>
+                </button>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 9, color: "#8a8a8a" }}>
                   <button
                     onClick={() => setLogs([])}
