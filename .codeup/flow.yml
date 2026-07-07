@@ -1,18 +1,23 @@
 # Codeup 流水线 — Hera Desktop Linux 安装包构建
-# 触发条件：推送 master 分支或手动触发
+# 触发条件：推送 master/dev 分支或手动触发
 #
-# 使用前需要修改：
-#   1. sources.app_repo.endpoint — 填写你的 Codeup 仓库地址
-#   2. 最后的 upload_artifact_step.serviceConnection — 填写制品库服务连接 ID
-#      （在 Codeup 组织设置 → 服务连接 → 新建通用制品库连接 中获取）
+# 使用前需要填写两类服务连接 ID（在 Codeup 组织设置 → 服务连接 中创建）：
+#   CODE_SC_ID   — 代码源服务连接（类型选"Codeup"，用于 checkout 本仓库）
+#   PKG_SC_ID    — 制品库服务连接（类型选"通用制品库"，用于上传安装包）
+#
+# 创建代码源服务连接步骤：
+#   组织设置 → 服务连接 → 新建 → 选"Codeup" → OAuth 授权 → 记下生成的连接 ID
 
 sources:
   app_repo:
     type: codeup
     name: Hera Desktop 代码源
-    # ↓ 替换为实际的 Codeup 仓库地址
     endpoint: https://codeup.aliyun.com/<your-org>/hera-desktop.git
     branch: master
+    # ↓ 必填：代码源服务连接 ID（Codeup 组织设置 → 服务连接 → 新建 Codeup 类型）
+    certificate:
+      type: serviceConnection
+      serviceConnection: <CODE_SC_ID>
 
 stages:
   build_stage:
