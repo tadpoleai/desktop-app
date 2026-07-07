@@ -1,23 +1,22 @@
 # Codeup 流水线 — Hera Desktop Linux 安装包构建
-# 触发条件：推送 master/dev 分支或手动触发
+# 触发条件：推送 master 分支或手动触发
 #
-# 使用前需要填写两类服务连接 ID（在 Codeup 组织设置 → 服务连接 中创建）：
-#   CODE_SC_ID   — 代码源服务连接（类型选"Codeup"，用于 checkout 本仓库）
-#   PKG_SC_ID    — 制品库服务连接（类型选"通用制品库"，用于上传安装包）
-#
-# 创建代码源服务连接步骤：
-#   组织设置 → 服务连接 → 新建 → 选"Codeup" → OAuth 授权 → 记下生成的连接 ID
+# 使用前需要修改：
+#   1. sources.app_repo.endpoint — 填写你的 Codeup 仓库地址
+#   2. 最后的 upload_artifact_step.serviceConnection — 填写制品库服务连接 ID
+#      （在 Codeup 组织设置 → 服务连接 → 新建通用制品库连接 中获取）
 
 sources:
   app_repo:
     type: codeup
     name: Hera Desktop 代码源
-    endpoint: https://codeup.aliyun.com/<your-org>/hera-desktop.git
+    # ↓ 替换为实际的 Codeup 仓库地址
+    endpoint: https://codeup.aliyun.com/6a2bd16adecc609679dd85a0/hera/desktop-app.git
     branch: master
-    # ↓ 必填：代码源服务连接 ID（Codeup 组织设置 → 服务连接 → 新建 Codeup 类型）
     certificate:
       type: serviceConnection
-      serviceConnection: <CODE_SC_ID>
+      serviceConnection: ve5pih4owtzh8thq
+    
 
 stages:
   build_stage:
@@ -28,25 +27,66 @@ stages:
         # ubuntu22 容器：与本机开发环境一致，WebKitGTK 4.1 可直接 apt 安装
         runsOn:
           group: public/cn-beijing
-          container: build-steps-public-registry.cn-beijing.cr.aliyuncs.com/build-steps/ubuntu22:latest
+          container: registry.cn-beijing.aliyuncs.com/rdc-builds/base:1.0
         steps:
 
           # ── 1. 系统依赖 ────────────────────────────────────────────────────
+          # rdc-builds/base:1.0 = Ubuntu 20.04 (focal)，apt 源里没有
+          # webkit2gtk-4.1（Tauri v2 必需），需要补充 Ubuntu 22.04 (jammy) 源。
+          # 使用阿里云镜像 + APT Pinning，确保只有 webkit/soup 包来自 jammy，
+          # 其余包仍锁定在 focal，避免 libc/glib 版本冲突。
           install_sys_deps_step:
-            name: "安装系统依赖 (WebKitGTK / GTK3)"
+            name: "安装系统依赖 (WebKitGTK 4.1 / GTK3)"
             step: Command
             with:
               run: |
+                set -e
+                DEBIAN_FRONTEND=noninteractive
+
+                # 打印 OS 信息（便于调试）
+                echo "=== OS ===" && cat /etc/os-release
+
+                CODENAME=$(. /etc/os-release && echo "${UBUNTU_CODENAME:-focal}")
+                echo "Ubuntu codename: $CODENAME"
+
+                # 替换为阿里云 Ubuntu 镜像（CN 环境下大幅加速）
+                cat > /etc/apt/sources.list <<SRCEOF
+                deb http://mirrors.aliyun.com/ubuntu/ $CODENAME main restricted universe multiverse
+                deb http://mirrors.aliyun.com/ubuntu/ ${CODENAME}-updates main restricted universe multiverse
+                deb http://mirrors.aliyun.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
+                SRCEOF
+
+                # focal (20.04) 缺少 webkit2gtk-4.1，从 jammy (22.04) 补充
+                if [ "$CODENAME" = "focal" ]; then
+                  echo "==> 检测到 Ubuntu 20.04，添加 jammy 源以获取 webkit2gtk-4.1"
+                  cat >> /etc/apt/sources.list <<SRCEOF
+                deb http://mirrors.aliyun.com/ubuntu/ jammy main restricted universe
+                deb http://mirrors.aliyun.com/ubuntu/ jammy-updates main restricted universe
+                SRCEOF
+
+                  # APT Pinning：webkit/soup 包优先使用 jammy，其余包锁定 focal
+                  mkdir -p /etc/apt/preferences.d
+                  cat > /etc/apt/preferences.d/99-jammy-webkit <<'PINEOF'
+                Package: libwebkit2gtk-4.1* libjavascriptcoregtk-4.1* libsoup-3.0* glib-networking*
+                Pin: release n=jammy
+                Pin-Priority: 600
+
+                Package: *
+                Pin: release n=jammy
+                Pin-Priority: 10
+                PINEOF
+                fi
+
                 apt-get update -y
                 apt-get install -y --no-install-recommends \
                   libwebkit2gtk-4.1-dev \
+                  libjavascriptcoregtk-4.1-dev \
+                  libsoup-3.0-dev \
                   libappindicator3-dev \
                   librsvg2-dev \
                   patchelf \
                   libgtk-3-dev \
                   libssl-dev \
-                  libsoup-3.0-dev \
-                  libjavascriptcoregtk-4.1-dev \
                   curl \
                   file \
                   build-essential \
@@ -67,7 +107,7 @@ stages:
 
           # ── 3. Node.js ─────────────────────────────────────────────────────
           setup_node_step:
-            name: "安装 Node.js 20"
+            name: "安装 Node.js 20 LTS"
             step: SetupNode
             with:
               versionType: predefined
@@ -103,20 +143,9 @@ stages:
             with:
               uploadType: packages
               # ↓ 在 Codeup 组织设置 → 服务连接 中创建"通用制品库"连接后填写其 ID
-              serviceConnection: <your-service-connection-id>
+              serviceConnection: to1a9uzsdikc4ixo
               repo: hera_releases
               artifact: "hera-desktop-linux"
               filePath: "src-tauri/target/release/bundle/deb/"
               version: "${BUILD_NUMBER}"
 
-          # （可选）同时上传 AppImage
-          upload_appimage_step:
-            name: "上传 AppImage"
-            step: ArtifactUpload
-            with:
-              uploadType: packages
-              serviceConnection: <your-service-connection-id>
-              repo: hera_releases
-              artifact: "hera-desktop-appimage"
-              filePath: "src-tauri/target/release/bundle/appimage/"
-              version: "${BUILD_NUMBER}"
