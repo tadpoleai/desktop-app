@@ -24,113 +24,28 @@ stages:
     jobs:
       tauri_linux_job:
         name: "Tauri .deb / AppImage 构建"
-        # ubuntu22 容器：与本机开发环境一致，WebKitGTK 4.1 可直接 apt 安装
+        # 自定义构建镜像：Ubuntu 22.04 + Rust stable + Node 20 + WebKitGTK 4.1
+        # 构建方式见 docker/tauri-builder.Dockerfile
         runsOn:
           group: public/cn-beijing
-          container: registry.cn-beijing.aliyuncs.com/rdc-builds/base:1.0
+          container: crpi-wzvoh0tsm7bwb22w.cn-shanghai.personal.cr.aliyuncs.com/glim/tauri-builder:v1
         steps:
 
-          # ── 1. 系统依赖 ────────────────────────────────────────────────────
-          # rdc-builds/base:1.0 = Ubuntu 20.04 (focal)，apt 源里没有
-          # webkit2gtk-4.1（Tauri v2 必需），需要补充 Ubuntu 22.04 (jammy) 源。
-          # 使用阿里云镜像 + APT Pinning，确保只有 webkit/soup 包来自 jammy，
-          # 其余包仍锁定在 focal，避免 libc/glib 版本冲突。
-          install_sys_deps_step:
-            name: "安装系统依赖 (WebKitGTK 4.1 / GTK3)"
-            step: Command
-            with:
-              run: |
-                set -e
-                DEBIAN_FRONTEND=noninteractive
-
-                # 打印 OS 信息（便于调试）
-                echo "=== OS ===" && cat /etc/os-release
-
-                CODENAME=$(. /etc/os-release && echo "${UBUNTU_CODENAME:-focal}")
-                echo "Ubuntu codename: $CODENAME"
-
-                # 替换为阿里云 Ubuntu 镜像（CN 环境下大幅加速）
-                cat > /etc/apt/sources.list <<SRCEOF
-                deb http://mirrors.aliyun.com/ubuntu/ $CODENAME main restricted universe multiverse
-                deb http://mirrors.aliyun.com/ubuntu/ ${CODENAME}-updates main restricted universe multiverse
-                deb http://mirrors.aliyun.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
-                SRCEOF
-
-                # focal (20.04) 缺少 webkit2gtk-4.1，从 jammy (22.04) 补充
-                if [ "$CODENAME" = "focal" ]; then
-                  echo "==> 检测到 Ubuntu 20.04，添加 jammy 源以获取 webkit2gtk-4.1"
-                  cat >> /etc/apt/sources.list <<SRCEOF
-                deb http://mirrors.aliyun.com/ubuntu/ jammy main restricted universe
-                deb http://mirrors.aliyun.com/ubuntu/ jammy-updates main restricted universe
-                SRCEOF
-
-                  # APT Pinning：webkit/soup 包优先使用 jammy，其余包锁定 focal
-                  mkdir -p /etc/apt/preferences.d
-                  cat > /etc/apt/preferences.d/99-jammy-webkit <<'PINEOF'
-                Package: libwebkit2gtk-4.1* libjavascriptcoregtk-4.1* libsoup-3.0* glib-networking*
-                Pin: release n=jammy
-                Pin-Priority: 600
-
-                Package: *
-                Pin: release n=jammy
-                Pin-Priority: 10
-                PINEOF
-                fi
-
-                apt-get update -y
-                apt-get install -y --no-install-recommends \
-                  libwebkit2gtk-4.1-dev \
-                  libjavascriptcoregtk-4.1-dev \
-                  libsoup-3.0-dev \
-                  libappindicator3-dev \
-                  librsvg2-dev \
-                  patchelf \
-                  libgtk-3-dev \
-                  libssl-dev \
-                  curl \
-                  file \
-                  build-essential \
-                  pkg-config
-
-          # ── 2. Rust ────────────────────────────────────────────────────────
-          install_rust_step:
-            name: "安装 Rust stable"
-            step: Command
-            with:
-              run: |
-                curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-                  | sh -s -- -y --no-modify-path --default-toolchain stable
-                # 将 cargo/bin 加入后续步骤的 PATH
-                echo "$HOME/.cargo/bin" >> $FLOW_PATH
-                # 验证
-                "$HOME/.cargo/bin/rustc" --version
-
-          # ── 3. Node.js ─────────────────────────────────────────────────────
-          setup_node_step:
-            name: "安装 Node.js 20 LTS"
-            step: SetupNode
-            with:
-              versionType: predefined
-              nodeVersion: "20"
-              npmType: npm
-
-          # ── 4. 前端依赖 ────────────────────────────────────────────────────
+          # ── 1. 前端依赖 ────────────────────────────────────────────────────
           npm_install_step:
             name: "npm ci"
             step: Command
             with:
-              run: npm ci
+              run: |
+                node --version && npm --version && rustc --version
+                npm ci
 
-          # ── 5. Tauri 打包 ──────────────────────────────────────────────────
+          # ── 2. Tauri 打包 ──────────────────────────────────────────────────
           tauri_build_step:
             name: "npm run tauri build"
             step: Command
             with:
               run: |
-                # 打包产物位于 src-tauri/target/release/bundle/
-                #   deb/        → *.deb (Debian/Ubuntu 安装包)
-                #   appimage/   → *.AppImage (通用 Linux)
-                #   rpm/        → *.rpm (如果启用)
                 npm run tauri build
                 echo "=== 产物列表 ==="
                 find src-tauri/target/release/bundle -type f \( -name "*.deb" -o -name "*.AppImage" \)
