@@ -1,0 +1,82 @@
+name: Release
+
+# 推送 v* 格式的 tag 时触发，例如 git tag v0.2.0 && git push origin v0.2.0
+# 也可在 GitHub Actions 页面手动触发
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ''
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'   # M1/M2 + Intel 通用包
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # macOS universal binary 需要两个 target
+          targets: ${{ matrix.platform == 'macos-latest' && 'x86_64-apple-darwin,aarch64-apple-darwin' || '' }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # ── Linux 系统依赖 (WebKitGTK / GTK3 / AppIndicator) ──────────────────
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libssl-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ── Tauri build + 自动上传到 GitHub Release (Draft) ──────────────────
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 若需签名，配置以下 Secrets（可先不填，跳过签名）:
+          # TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Hera Desktop ${{ github.ref_name }}
+          releaseBody: |
+            自动构建的安装包。
+            - Linux: `.deb` / `.AppImage`
+            - macOS: `.dmg` (Universal)
+            - Windows: `.msi` / `_x64-setup.exe`
+          releaseDraft: true     # 先建草稿，人工确认后发布
+          prerelease: false
+          args: ${{ matrix.args }}
