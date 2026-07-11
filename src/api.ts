@@ -11,6 +11,39 @@ export interface Dataset {
   indexed_at: string;
 }
 
+/** A fully parsed hera recording session (3-file bundle: .hera + .insv + .session.json). */
+export interface HeraSession {
+  path: string;
+  stem: string;
+  /** Parsed from stem: "YYYY-MM-DD" */
+  date: string;
+  /** Parsed from stem: "HH:MM:SS" */
+  time: string;
+  /** Parsed from stem: second segment after timestamp */
+  operator: string;
+  /** Parsed from stem: remaining segments joined with "_" */
+  place: string;
+  hera_size: number;
+  insv_path: string | null;
+  insv_size: number | null;
+  session_json: string | null;
+  session_json_size: number | null;
+}
+
+export function parseSessionFilename(stem: string): Pick<HeraSession, "date" | "time" | "operator" | "place"> {
+  const parts = stem.split("_");
+  if (parts.length >= 3 && parts[0].length === 14) {
+    const ts = parts[0];
+    return {
+      date: `${ts.slice(0,4)}-${ts.slice(4,6)}-${ts.slice(6,8)}`,
+      time: `${ts.slice(8,10)}:${ts.slice(10,12)}:${ts.slice(12,14)}`,
+      operator: parts[1],
+      place: parts.slice(2).join("_"),
+    };
+  }
+  return { date: "?", time: "?", operator: "?", place: stem };
+}
+
 export interface Job {
   id: string;
   workflow_id: string;
@@ -204,6 +237,15 @@ export interface OperatorSummary {
 export const api = {
   listDatasets: () => invoke<Dataset[]>("list_datasets"),
   scanDir: (path: string) => invoke<number>("scan_dir", { path }),
+
+  openHeraSession: async (path: string): Promise<HeraSession> => {
+    const raw = await invoke<{
+      path: string; stem: string; hera_size: number;
+      insv_path: string | null; insv_size: number | null;
+      session_json: string | null; session_json_size: number | null;
+    }>("open_hera_session", { path });
+    return { ...raw, ...parseSessionFilename(raw.stem) };
+  },
   listWorkflows: () => invoke<WorkflowSummary[]>("list_workflows"),
   getWorkflow: (id: string) => invoke<WorkflowDetail>("get_workflow", { id }),
   runWorkflow: (

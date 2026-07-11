@@ -1,6 +1,6 @@
 import React from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { api, WorkflowDetail, WorkflowSummary, JobEvent, NodeDetail } from "../api";
+import { api, WorkflowDetail, WorkflowSummary, JobEvent, NodeDetail, HeraSession } from "../api";
 import { toast } from "../components/toast";
 
 type StepState = "pending" | "running" | "done" | "failed";
@@ -17,9 +17,11 @@ type SchemaProp = {
 
 interface Props {
   onCrumbChange?: (s: string) => void;
+  currentSession?: HeraSession | null;
+  onRequestSession?: () => void;
 }
 
-export function RunView({ onCrumbChange }: Props) {
+export function RunView({ onCrumbChange, currentSession, onRequestSession }: Props) {
   const [workflows, setWorkflows] = React.useState<WorkflowSummary[]>([]);
   const [selected, setSelected] = React.useState<WorkflowDetail | null>(null);
   const [inputPath, setInputPath] = React.useState("");
@@ -32,6 +34,11 @@ export function RunView({ onCrumbChange }: Props) {
   React.useEffect(() => {
     api.listWorkflows().then(setWorkflows).catch(() => {});
   }, []);
+
+  // Pre-fill input path from current session whenever it changes
+  React.useEffect(() => {
+    if (currentSession?.path) setInputPath(currentSession.path);
+  }, [currentSession?.path]);
 
   React.useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -175,28 +182,63 @@ export function RunView({ onCrumbChange }: Props) {
           <span style={{ fontWeight: 600, fontSize: 14 }}>{selected.name}</span>
         </div>
 
-        {/* Input file / dir */}
-        <div style={{ background: "#fff", border: "1px solid #e2e2e2", borderRadius: 6, padding: 14 }}>
-          <div style={{ fontSize: 12, color: "#6d6d6d", marginBottom: 7 }}>
-            {selected.input.label}
-            {selected.input.ext?.map((e) => (
-              <span key={e} className="hs-tag hs-tag-gray mono" style={{ fontSize: 10.5, marginLeft: 6 }}>{e}</span>
-            ))}
+        {/* Input: session banner or manual path */}
+        {currentSession ? (
+          <div style={{ background: "rgba(65,205,82,.06)", border: "1px solid rgba(65,205,82,.25)", borderRadius: 6, padding: "10px 14px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#199a3e" strokeWidth="2"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>
+              <span style={{ fontSize: 11.5, fontWeight: 600, color: "#199a3e" }}>当前会话</span>
+              <span style={{ marginLeft: "auto", fontSize: 11, color: "#9a9a9a" }}>
+                {selected.input.ext?.map((e) => (
+                  <span key={e} className="hs-tag hs-tag-gray mono" style={{ fontSize: 10.5, marginLeft: 4 }}>{e}</span>
+                ))}
+              </span>
+            </div>
+            <div style={{ fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace", fontSize: 12, color: "#333", marginBottom: 8 }}>
+              {currentSession.stem}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                className="hs-input mono"
+                style={{ flex: 1, fontSize: 11.5 }}
+                value={inputPath}
+                onChange={(e) => setInputPath(e.target.value)}
+                placeholder="路径…"
+              />
+              <button className="hs-btn" style={{ fontSize: 11.5 }} onClick={() => onRequestSession?.()}>
+                更换会话
+              </button>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              className="hs-input mono"
-              style={{ flex: 1 }}
-              value={inputPath}
-              onChange={(e) => setInputPath(e.target.value)}
-              placeholder="输入路径，或点击右侧浏览…"
-            />
-            <button className="hs-btn" onClick={browseInput}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>
-              浏览
-            </button>
+        ) : (
+          <div style={{ background: "#fff", border: "1px solid #e2e2e2", borderRadius: 6, padding: 14 }}>
+            <div style={{ fontSize: 12, color: "#6d6d6d", marginBottom: 7, display: "flex", alignItems: "center", gap: 6 }}>
+              {selected.input.label}
+              {selected.input.ext?.map((e) => (
+                <span key={e} className="hs-tag hs-tag-gray mono" style={{ fontSize: 10.5 }}>{e}</span>
+              ))}
+              <button
+                onClick={() => onRequestSession?.()}
+                style={{ marginLeft: "auto", fontSize: 11, color: "#199a3e", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}
+              >
+                选择会话…
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                className="hs-input mono"
+                style={{ flex: 1 }}
+                value={inputPath}
+                onChange={(e) => setInputPath(e.target.value)}
+                placeholder="输入路径，或点击右侧浏览…"
+              />
+              <button className="hs-btn" onClick={browseInput}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>
+                浏览
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Param panels per node */}
         {selected.nodes.map((node) => (

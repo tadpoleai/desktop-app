@@ -3,14 +3,15 @@ import { App as AntApp, ConfigProvider } from "antd";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { _msgRef } from "./components/toast";
 import { heraTheme } from "./theme";
-import { api, AppConfig, JobEvent } from "./api";
+import { api, AppConfig, JobEvent, HeraSession } from "./api";
 import { DataView } from "./views/DataView";
 import { RunView } from "./views/RunView";
 import { TaskView } from "./views/TaskView";
 import { SettingsView } from "./views/SettingsView";
 import { OperatorsView } from "./views/OperatorsView";
+import { MemoryView } from "./views/MemoryView";
 
-type ViewId = "data" | "run" | "tasks" | "operators" | "settings";
+type ViewId = "data" | "run" | "tasks" | "memory" | "operators" | "settings";
 type LogLine = { text: string; cls: string };
 
 // Captures antd message API into module-level ref for use anywhere via toast.*
@@ -21,24 +22,27 @@ function ToastProvider() {
 }
 
 const CRUMB_LABELS: Record<ViewId, string> = {
-  data:      "数据集索引",
-  run:       "运行",
+  data:      "会话浏览器",
+  run:       "配置与执行",
   tasks:     "任务历史",
+  memory:    "空间记忆库",
   operators: "算子仓库",
   settings:  "首选项",
 };
 
 const VIEW_LABELS: Record<ViewId, string> = {
-  data:      "数据集",
+  data:      "数据",
   run:       "运行",
   tasks:     "任务",
+  memory:    "记忆",
   operators: "算子",
   settings:  "设置",
 };
 
 export function App() {
-  const [view, setView]           = useState<ViewId>("run");
-  const [config, setConfig]       = useState<AppConfig | null>(null);
+  const [view, setView]               = useState<ViewId>("data");
+  const [config, setConfig]           = useState<AppConfig | null>(null);
+  const [currentSession, setCurrentSession] = useState<HeraSession | null>(null);
   const [logs, setLogs]           = useState<LogLine[]>([]);
   const [outOpen, setOutOpen]     = useState(true);
   const [running, setRunning]     = useState(false);
@@ -108,7 +112,7 @@ export function App() {
   const gpuOff  = !(config?.runtime?.gpu_enabled);
 
   const crumb = CRUMB_LABELS[view];
-  const crumbLeaf = subCrumb || (view === "run" ? "选择工作流" : crumb);
+  const crumbLeaf = subCrumb || crumb;
 
   return (
     <ConfigProvider theme={heraTheme}>
@@ -126,6 +130,11 @@ export function App() {
           </div>
           <div className="hs-titlebar-title">
             Hera Studio — {VIEW_LABELS[view]}
+            {currentSession && (
+              <span style={{ marginLeft: 10, fontSize: 11, color: "#a0a0a0", fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace" }}>
+                [{currentSession.stem}]
+              </span>
+            )}
           </div>
           <div className="hs-winbtns">
             <button className="hs-winbtn" title="最小化"
@@ -163,6 +172,13 @@ export function App() {
               <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <path d="M9 4h6v2H9z"/><path d="M7 4H5v16h14V4h-2"/>
                 <path d="M8 11h8M8 15h5"/>
+              </svg>
+            </ModeBtn>
+            <ModeBtn id="memory" label="记忆" active={view==="memory"} onClick={() => setView("memory")} accent="#8b5cf6">
+              <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <path d="M3 12l7-7 4 4 4-4 3 3"/>
+                <path d="M3 20h18"/>
+                <circle cx="7" cy="17" r="1.8"/><circle cx="12" cy="15" r="1.8"/><circle cx="17" cy="13" r="1.8"/>
               </svg>
             </ModeBtn>
             <ModeBtn id="operators" label="算子"    active={view==="operators"} onClick={() => setView("operators")}>
@@ -219,11 +235,21 @@ export function App() {
 
             {/* Main content */}
             <div className="hs-content">
-              {view === "data"      && <DataView />}
-              {view === "run"       && (
-                <RunView onCrumbChange={setSubCrumb} />
+              {view === "data" && (
+                <DataView
+                  currentSession={currentSession}
+                  onSessionOpen={(s) => { setCurrentSession(s); setView("run"); }}
+                />
+              )}
+              {view === "run" && (
+                <RunView
+                  onCrumbChange={setSubCrumb}
+                  currentSession={currentSession}
+                  onRequestSession={() => setView("data")}
+                />
               )}
               {view === "tasks"     && <TaskView />}
+              {view === "memory"    && <MemoryView />}
               {view === "operators" && <OperatorsView />}
               {view === "settings"  && <SettingsView onConfigSaved={setConfig} />}
             </div>
@@ -285,6 +311,12 @@ export function App() {
 
             {/* Status bar */}
             <div className="hs-statusbar">
+              {currentSession && (
+                <span style={{ fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace", fontSize: 10.5, color: "#199a3e", display: "inline-flex", alignItems: "center", gap: 5, marginRight: 4 }}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>
+                  {currentSession.stem}
+                </span>
+              )}
               <div className="hs-locator">
                 <span className="hs-locator-arrow">›</span>
                 <input
@@ -333,14 +365,20 @@ interface ModeBtnProps {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
+  accent?: string;
 }
 
-function ModeBtn({ label, active, onClick, children }: ModeBtnProps) {
+function ModeBtn({ label, active, onClick, children, accent }: ModeBtnProps) {
+  const accentColor = accent ?? "var(--hs-green-dim)";
   return (
-    <button className={`hs-mode-btn ${active ? "active" : ""}`} onClick={onClick}>
-      <span className="hs-mode-bar" />
+    <button
+      className={`hs-mode-btn ${active ? "active" : ""}`}
+      onClick={onClick}
+      style={active && accent ? { color: accent } : undefined}
+    >
+      <span className="hs-mode-bar" style={accent ? { background: accent } : undefined} />
       {children}
-      <span className="hs-mode-label">{label}</span>
+      <span className="hs-mode-label" style={active && accent ? { color: accent } : undefined}>{label}</span>
     </button>
   );
 }

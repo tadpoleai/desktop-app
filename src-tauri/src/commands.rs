@@ -286,6 +286,57 @@ pub fn job_provenance(
         .map_err(|e| e.to_string())
 }
 
+// ── Hera session ─────────────────────────────────────────────────────────────
+
+/// Open a .hera file: stat it, find the adjacent .insv and .session.json,
+/// read the session.json content, upsert the hera file into the dataset registry.
+#[tauri::command]
+pub fn open_hera_session(
+    path: String,
+    state: State<AppState>,
+) -> Result<serde_json::Value, String> {
+    let p = std::path::PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("file not found: {}", path));
+    }
+
+    let stem = p
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_string();
+    let dir = p.parent().unwrap_or_else(|| Path::new("."));
+
+    let hera_size = p.metadata().map(|m| m.len()).unwrap_or(0);
+
+    let insv_path = dir.join(format!("{}.insv", stem));
+    let insv_size: Option<u64> = insv_path.metadata().ok().map(|m| m.len());
+    let insv_path_str: Option<String> = if insv_path.exists() {
+        Some(insv_path.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    let session_json_path = dir.join(format!("{}.session.json", stem));
+    let session_json: Option<String> = std::fs::read_to_string(&session_json_path).ok();
+    let session_json_size: Option<u64> = session_json_path.metadata().ok().map(|m| m.len());
+
+    {
+        let reg = state.registry.lock().unwrap();
+        let _ = reg.upsert_dataset(&path, "hera", hera_size, None);
+    }
+
+    Ok(serde_json::json!({
+        "path": path,
+        "stem": stem,
+        "hera_size": hera_size,
+        "insv_path": insv_path_str,
+        "insv_size": insv_size,
+        "session_json": session_json,
+        "session_json_size": session_json_size,
+    }))
+}
+
 // ── File system ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
