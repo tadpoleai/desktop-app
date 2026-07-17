@@ -40,7 +40,7 @@ export function OperatorsView() {
       toast.success(`算子已注册: ${(manifest as { id?: string })?.id ?? r}`);
       if (!ref) setImageRef("");
       await load();
-    } catch (e) { toast.error(`注册失败: ${e}`); }
+    } catch (e) { toast.dockerError(String(e), "算子注册失败"); }
     finally { setAdding(false); }
   }
 
@@ -52,7 +52,7 @@ export function OperatorsView() {
       const manifest = await api.operatorAdd("", file as string, undefined);
       toast.success(`算子已从 tar 注册: ${(manifest as { id?: string })?.id ?? "unknown"}`);
       await load();
-    } catch (e) { toast.error(`tar 导入失败: ${e}`); }
+    } catch (e) { toast.dockerError(String(e), "tar 导入失败"); }
     finally { setAdding(false); }
   }
 
@@ -65,7 +65,7 @@ export function OperatorsView() {
       setPullState((s) => ({ ...s, [op.id]: "done" }));
       await load();
     } catch (e) {
-      toast.error(`拉取失败: ${e}`);
+      toast.dockerError(String(e), `${op.name} 拉取失败`);
       setPullState((s) => { const n = { ...s }; delete n[op.id]; return n; });
     }
   }

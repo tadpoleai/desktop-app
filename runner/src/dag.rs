@@ -15,7 +15,7 @@ pub enum JobEvent {
     StepStart { step: String, image: String },
     Log { step: String, text: String, is_stderr: bool },
     StepComplete { step: String },
-    StepFailed { step: String, exit_code: i32 },
+    StepFailed { step: String, exit_code: i32, reason: String },
     JobComplete { artifacts: Vec<Artifact> },
     JobFailed { step: String, reason: String },
 }
@@ -180,28 +180,41 @@ async fn run_workflow_inner(
             .run(&op.image, needs_gpu, &mounts, &env, &command)
             .await?;
 
+        let mut stderr_tail: Vec<String> = Vec::new();
         while let Some(line) = log_rx.recv().await {
+            let is_stderr = matches!(line.stream, crate::container::Stream::Stderr);
+            if is_stderr {
+                stderr_tail.push(line.text.clone());
+                if stderr_tail.len() > 40 {
+                    stderr_tail.remove(0);
+                }
+            }
             let _ = tx
                 .send(JobEvent::Log {
                     step: node.id.clone(),
                     text: line.text,
-                    is_stderr: matches!(line.stream, crate::container::Stream::Stderr),
+                    is_stderr,
                 })
                 .await;
         }
 
         if !op.exit_codes_ok.contains(&exit_code) {
+            let reason = if stderr_tail.is_empty() {
+                format!("步骤 {} 执行失败（退出码 {}），请查看日志了解详情。", node.id, exit_code)
+            } else {
+                crate::docker_diag::friendly_docker_error(
+                    &format!("步骤 {} 执行失败（退出码 {}）", node.id, exit_code),
+                    &stderr_tail.join("\n"),
+                )
+            };
             let _ = tx
                 .send(JobEvent::StepFailed {
                     step: node.id.clone(),
                     exit_code,
+                    reason: reason.clone(),
                 })
                 .await;
-            return Err(anyhow::anyhow!(
-                "Step {} failed with exit code {}",
-                node.id,
-                exit_code
-            ));
+            return Err(anyhow::anyhow!(reason));
         }
 
         let _ = tx.send(JobEvent::StepComplete { step: node.id.clone() }).await;
@@ -371,12 +384,13 @@ pub fn extract_config_from_image(
 
     let create = Command::new("docker")
         .args(["create", "--name", &container_name, image, "true"])
-        .output()?;
+        .output()
+        .map_err(|e| anyhow::anyhow!(crate::docker_diag::friendly_spawn_error("docker", &e)))?;
     if !create.status.success() {
-        return Err(anyhow::anyhow!(
-            "docker create failed: {}",
-            String::from_utf8_lossy(&create.stderr).trim()
-        ));
+        return Err(anyhow::anyhow!(crate::docker_diag::friendly_docker_error(
+            "提取算子配置失败 (docker create)",
+            &String::from_utf8_lossy(&create.stderr),
+        )));
     }
 
     // docker cp <container>:/path/. <dest> copies contents (not the dir itself)
@@ -394,12 +408,12 @@ pub fn extract_config_from_image(
         .args(["rm", &container_name])
         .output();
 
-    let cp = cp?;
+    let cp = cp.map_err(|e| anyhow::anyhow!(crate::docker_diag::friendly_spawn_error("docker", &e)))?;
     if !cp.status.success() {
-        return Err(anyhow::anyhow!(
-            "docker cp failed: {}",
-            String::from_utf8_lossy(&cp.stderr).trim()
-        ));
+        return Err(anyhow::anyhow!(crate::docker_diag::friendly_docker_error(
+            "提取算子配置失败 (docker cp)",
+            &String::from_utf8_lossy(&cp.stderr),
+        )));
     }
     Ok(())
 }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { _msgRef } from "./components/toast";
+import { _msgRef, _notifRef, toast } from "./components/toast";
 import { heraTheme } from "./theme";
 import { api, AppConfig, JobEvent, HeraSession } from "./api";
 import { DataView } from "./views/DataView";
@@ -16,8 +16,9 @@ type LogLine = { text: string; cls: string };
 
 // Captures antd message API into module-level ref for use anywhere via toast.*
 function ToastProvider() {
-  const { message } = AntApp.useApp();
+  const { message, notification } = AntApp.useApp();
   _msgRef.current = message;
+  _notifRef.current = notification;
   return null;
 }
 
@@ -86,7 +87,7 @@ export function App() {
         appendLog(`[${ev.step}] ${ev.text}`, ev.is_stderr ? "stderr" : "");
         break;
       case "step_failed":
-        appendLog(`[${ev.step}] FAILED exit=${ev.exit_code}`, "stderr");
+        appendLog(`[${ev.step}] FAILED exit=${ev.exit_code}${ev.reason ? `\n${ev.reason}` : ""}`, "stderr");
         break;
       case "job_complete":
         setRunning(false);
@@ -99,6 +100,7 @@ export function App() {
         setRunning(false);
         setStepLabel("");
         appendLog(`工作流失败: ${ev.reason}`, "stderr");
+        toast.dockerError(ev.reason ?? "未知错误", "工作流执行失败");
         break;
     }
   }

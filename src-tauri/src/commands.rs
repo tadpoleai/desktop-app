@@ -202,8 +202,8 @@ pub async fn run_workflow(
                 JobEvent::StepComplete { step } => serde_json::json!({
                     "type": "step_complete", "job": jid2, "step": step
                 }),
-                JobEvent::StepFailed { step, exit_code } => serde_json::json!({
-                    "type": "step_failed", "job": jid2, "step": step, "exit_code": exit_code
+                JobEvent::StepFailed { step, exit_code, reason } => serde_json::json!({
+                    "type": "step_failed", "job": jid2, "step": step, "exit_code": exit_code, "reason": reason
                 }),
                 JobEvent::JobComplete { artifacts } => {
                     success = true;
@@ -420,11 +420,11 @@ pub async fn operator_add(
             .args(["load", "-i", tar])
             .output()
             .await
-            .map_err(|e| format!("docker load failed: {e}"))?;
+            .map_err(|e| hera_runner::docker_diag::friendly_spawn_error(&container, &e))?;
         if !out.status.success() {
-            return Err(format!(
-                "docker load error: {}",
-                String::from_utf8_lossy(&out.stderr)
+            return Err(hera_runner::docker_diag::friendly_docker_error(
+                "镜像导入失败 (docker load)",
+                &String::from_utf8_lossy(&out.stderr),
             ));
         }
         // Parse "Loaded image: <ref>" from stdout
@@ -441,11 +441,11 @@ pub async fn operator_add(
             .args(["pull", &image_ref])
             .output()
             .await
-            .map_err(|e| format!("docker pull failed: {e}"))?;
+            .map_err(|e| hera_runner::docker_diag::friendly_spawn_error(&container, &e))?;
         if !pull.status.success() {
-            return Err(format!(
-                "docker pull error: {}",
-                String::from_utf8_lossy(&pull.stderr)
+            return Err(hera_runner::docker_diag::friendly_docker_error(
+                "镜像拉取失败 (docker pull)",
+                &String::from_utf8_lossy(&pull.stderr),
             ));
         }
         image_ref.clone()
@@ -470,13 +470,14 @@ pub async fn operator_add(
             .args(["run", "--rm", &resolved_ref, "--describe"])
             .output()
             .await
-            .map_err(|e| format!("docker run --describe failed: {e}"))?;
+            .map_err(|e| hera_runner::docker_diag::friendly_spawn_error(&container, &e))?;
         if !describe.status.success() {
             return Err(format!(
-                "operator --describe failed (exit {}): {}\n\
-                 Tip: for images that don't support --describe, supply the manifest JSON explicitly.",
-                describe.status.code().unwrap_or(-1),
-                String::from_utf8_lossy(&describe.stderr)
+                "{}\n提示：如果该镜像不支持 --describe 协议，请直接提供 manifest JSON。",
+                hera_runner::docker_diag::friendly_docker_error(
+                    "获取算子描述失败 (docker run --describe)",
+                    &String::from_utf8_lossy(&describe.stderr),
+                ),
             ));
         }
         let manifest_str = String::from_utf8_lossy(&describe.stdout);
@@ -496,7 +497,7 @@ pub async fn operator_add(
         .args(["inspect", "--format", "{{.Id}}", &resolved_ref])
         .output()
         .await
-        .map_err(|e| format!("docker inspect failed: {e}"))?;
+        .map_err(|e| hera_runner::docker_diag::friendly_spawn_error(&container, &e))?;
     let digest = String::from_utf8_lossy(&inspect.stdout).trim().to_string();
 
     // 5. Register

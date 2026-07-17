@@ -19,9 +19,9 @@ impl ContainerRuntime {
     }
 
     pub fn detect() -> Self {
-        if which_exists("docker") {
+        if binary_available("docker") {
             Self::new("docker", false)
-        } else if which_exists("podman") {
+        } else if binary_available("podman") {
             Self::new("podman", false)
         } else {
             Self::new("docker", false)
@@ -96,7 +96,8 @@ impl ContainerRuntime {
             .args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn()?;
+            .spawn()
+            .map_err(|e| anyhow::anyhow!(crate::docker_diag::friendly_spawn_error(&self.binary, &e)))?;
 
         let stdout = child.stdout.take().expect("stdout");
         let stderr = child.stderr.take().expect("stderr");
@@ -150,9 +151,15 @@ pub struct LogLine {
     pub text: String,
 }
 
-fn which_exists(cmd: &str) -> bool {
-    std::process::Command::new("which")
-        .arg(cmd)
+/// Check whether `cmd` is installed and runnable, without relying on
+/// platform-specific lookup tools (`which` doesn't exist on Windows;
+/// `where` doesn't exist on Unix). `docker --version` / `podman --version`
+/// only talk to the CLI binary, not the daemon, so this is a pure
+/// "is it installed" check — daemon reachability is diagnosed separately
+/// when a real command actually fails.
+fn binary_available(cmd: &str) -> bool {
+    std::process::Command::new(cmd)
+        .arg("--version")
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
