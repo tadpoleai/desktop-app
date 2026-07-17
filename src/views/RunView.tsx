@@ -60,7 +60,7 @@ export function RunView({ onCrumbChange, currentSession, onRequestSession }: Pro
   async function selectWorkflow(id: string) {
     const wf = await api.getWorkflow(id);
     setSelected(wf);
-    setInputPath("");
+    setInputPath(currentSession?.path ?? "");
     setJobId(null);
     setStepStates({});
     onCrumbChange?.(wf.name + " › 配置与执行");

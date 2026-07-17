@@ -337,6 +337,24 @@ pub fn open_hera_session(
     }))
 }
 
+/// Parse the `.hera` binary header (magic/version, timestamp range, per-device
+/// message/byte counts, and the V4 `extra_info` JSON blob). Header-only read —
+/// packet data is never touched, so this is cheap regardless of file size.
+#[tauri::command]
+pub fn hera_file_info(path: String) -> Result<serde_json::Value, String> {
+    let p = std::path::PathBuf::from(&path);
+    let header = hera_runner::hera_format::read_header(&p).map_err(|e| e.to_string())?;
+    let duration_s = (header.timestamp_end_ns.saturating_sub(header.timestamp_start_ns)) as f64 / 1e9;
+    Ok(serde_json::json!({
+        "version": header.version,
+        "timestamp_start_ns": header.timestamp_start_ns,
+        "timestamp_end_ns": header.timestamp_end_ns,
+        "duration_s": duration_s,
+        "devices": header.devices,
+        "extra_info": header.extra_info,
+    }))
+}
+
 // ── File system ───────────────────────────────────────────────────────────────
 
 #[tauri::command]

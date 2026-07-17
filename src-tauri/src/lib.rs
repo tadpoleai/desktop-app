@@ -69,6 +69,7 @@ pub fn run() {
             commands::operator_remove,
             commands::job_provenance,
             commands::open_hera_session,
+            commands::hera_file_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

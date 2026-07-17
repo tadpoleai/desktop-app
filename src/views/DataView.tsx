@@ -1,5 +1,5 @@
 import React from "react";
-import { api, Dataset, HeraSession, parseSessionFilename } from "../api";
+import { api, Dataset, HeraFileInfo, HeraSession, parseSessionFilename } from "../api";
 import { toast } from "../components/toast";
 
 interface Props {
@@ -169,12 +169,21 @@ function SessionDetail({ session, onOpenInRun }: { session: HeraSession; onOpenI
     try { return JSON.parse(session.session_json!); } catch { return null; }
   })() : null;
 
-  const streams = [
-    { label: "Livox 点云", color: "#3b82f6", bg: "#dbeafe", present: true,     note: "LivoxPacket (0x0521) · 连续输出" },
-    { label: "Livox IMU",  color: "#06b6d4", bg: "#cffafe", present: true,     note: "LivoxImuPacket (0x0524) · ~200 Hz" },
-    { label: "陀螺仪",    color: "#f59e0b", bg: "#fef3c7", present: true,     note: "InstaGyroPacket (0x0422) · ~490 Hz" },
-    { label: "全景视频",  color: "#8b5cf6", bg: "#ede9fe", present: !!session.insv_path, note: session.insv_path ? ".insv 双鱼眼，待离线拼接" : "— 无 .insv 文件" },
-  ];
+  const [heraInfo, setHeraInfo] = React.useState<HeraFileInfo | null>(null);
+  const [heraInfoError, setHeraInfoError] = React.useState<string | null>(null);
+  const [heraInfoLoading, setHeraInfoLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setHeraInfo(null);
+    setHeraInfoError(null);
+    setHeraInfoLoading(true);
+    api.heraFileInfo(session.path)
+      .then((info) => { if (!cancelled) setHeraInfo(info); })
+      .catch((e) => { if (!cancelled) setHeraInfoError(String(e)); })
+      .finally(() => { if (!cancelled) setHeraInfoLoading(false); });
+    return () => { cancelled = true; };
+  }, [session.path]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -199,28 +208,67 @@ function SessionDetail({ session, onOpenInRun }: { session: HeraSession; onOpenI
         </div>
       </div>
 
-      {/* Data streams */}
-      <Section title="数据流">
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {streams.map((s) => (
-            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 14, height: 14, borderRadius: 3, background: s.present ? s.bg : "#f0f0f0", border: `1px solid ${s.present ? s.color : "#dcdcdc"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                {s.present && <div style={{ width: 7, height: 7, borderRadius: 1.5, background: s.color }} />}
-              </div>
-              <div style={{
-                flex: 1, height: 24, borderRadius: 4, overflow: "hidden",
-                background: s.present ? s.bg : "#eeeeee",
-                border: `1px solid ${s.present ? s.color+"44" : "#e0e0e0"}`,
-                display: "flex", alignItems: "center", padding: "0 10px",
-              }}>
-                <span style={{ fontSize: 11.5, fontWeight: 600, color: s.present ? s.color : "#aaa" }}>{s.label}</span>
-              </div>
-              <span style={{ width: 230, fontSize: 11, color: s.present ? "#6d6d6d" : "#aaa", flexShrink: 0, fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace" }}>
-                {s.note}
+      {/* Hera header metadata (parsed from the binary file header — see hera-sdk-python) */}
+      <Section title="元数据">
+        {heraInfoLoading && (
+          <div style={{ fontSize: 12, color: "#9a9a9a" }}>解析文件头…</div>
+        )}
+        {heraInfoError && (
+          <div style={{ fontSize: 12, color: "#cf3a3f" }}>解析失败：{heraInfoError}</div>
+        )}
+        {heraInfo && (
+          <>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 12 }}>
+              <span className="hs-tag hs-tag-green mono" style={{ fontSize: 11 }}>V{heraInfo.version}</span>
+              <span style={{ fontSize: 11, color: "#6d6d6d", fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace" }}>
+                {formatNs(heraInfo.timestamp_start_ns)} → {formatNs(heraInfo.timestamp_end_ns)}
+              </span>
+              <span style={{ fontSize: 11, color: "#6d6d6d", fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace" }}>
+                时长 {heraInfo.duration_s.toFixed(3)} s
               </span>
             </div>
-          ))}
-        </div>
+
+            {/* Per-device table */}
+            <div style={{ border: "1px solid #e2e2e2", borderRadius: 5, overflow: "hidden", marginBottom: 12 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+                <thead>
+                  <tr style={{ background: "#f7f7f7", textAlign: "left" }}>
+                    <th style={thStyle}>ID</th>
+                    <th style={thStyle}>设备</th>
+                    <th style={{ ...thStyle, textAlign: "right" }}>消息数</th>
+                    <th style={{ ...thStyle, textAlign: "right" }}>数据量</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {heraInfo.devices.map((d) => (
+                    <tr key={d.id} style={{ borderTop: "1px solid #ececec" }}>
+                      <td style={tdStyle}>{d.id}</td>
+                      <td style={{ ...tdStyle, fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace" }}>{d.name}</td>
+                      <td style={{ ...tdStyle, textAlign: "right" }}>{d.message_count.toLocaleString()}</td>
+                      <td style={{ ...tdStyle, textAlign: "right" }}>{formatSize(d.data_bytes)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* extra_info blob */}
+            {heraInfo.extra_info != null && (
+              <details>
+                <summary style={{ cursor: "pointer", fontSize: 11.5, color: "#199a3e", userSelect: "none" }}>
+                  附加信息 (extra_info)
+                </summary>
+                <pre style={{
+                  marginTop: 8, padding: 10, background: "#f7f7f7", border: "1px solid #e2e2e2",
+                  borderRadius: 5, fontSize: 11, lineHeight: 1.5, maxHeight: 320, overflow: "auto",
+                  fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace",
+                }}>
+                  {JSON.stringify(heraInfo.extra_info, null, 2)}
+                </pre>
+              </details>
+            )}
+          </>
+        )}
         {sessionMeta?.record_start_host_ns && (
           <div style={{ marginTop: 10, fontSize: 11, color: "#8a8a8a", fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace" }}>
             record_start_host_ns: {sessionMeta.record_start_host_ns}
@@ -308,6 +356,15 @@ function FileCard({ icon, iconBg, iconColor, ext, size, present, note }: {
       </div>
     </div>
   );
+}
+
+const thStyle: React.CSSProperties = { padding: "6px 10px", fontSize: 10.5, fontWeight: 600, color: "#8a8a8a", textTransform: "uppercase", letterSpacing: ".3px" };
+const tdStyle: React.CSSProperties = { padding: "6px 10px", color: "#333" };
+
+/** Nanosecond epoch timestamp -> local date/time string. */
+function formatNs(ns: number): string {
+  if (!Number.isFinite(ns) || ns <= 0) return "—";
+  return new Date(ns / 1e6).toLocaleString();
 }
 
 function formatSize(n: number | null): string {

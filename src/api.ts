@@ -44,6 +44,23 @@ export function parseSessionFilename(stem: string): Pick<HeraSession, "date" | "
   return { date: "?", time: "?", operator: "?", place: stem };
 }
 
+export interface HeraDeviceInfo {
+  id: number;
+  name: string;
+  message_count: number;
+  data_bytes: number;
+}
+
+/** Parsed `.hera` binary file header (version/time range/per-device stats/extra_info). */
+export interface HeraFileInfo {
+  version: number;
+  timestamp_start_ns: number;
+  timestamp_end_ns: number;
+  duration_s: number;
+  devices: HeraDeviceInfo[];
+  extra_info: unknown;
+}
+
 export interface Job {
   id: string;
   workflow_id: string;
@@ -246,6 +263,7 @@ export const api = {
     }>("open_hera_session", { path });
     return { ...raw, ...parseSessionFilename(raw.stem) };
   },
+  heraFileInfo: (path: string) => invoke<HeraFileInfo>("hera_file_info", { path }),
   listWorkflows: () => invoke<WorkflowSummary[]>("list_workflows"),
   getWorkflow: (id: string) => invoke<WorkflowDetail>("get_workflow", { id }),
   runWorkflow: (
