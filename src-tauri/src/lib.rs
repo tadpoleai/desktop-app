@@ -70,6 +70,7 @@ pub fn run() {
             commands::list_jobs,
             commands::job_artifacts,
             commands::open_path,
+            commands::resolve_tool,
             commands::get_config,
             commands::set_config,
             commands::operator_add,

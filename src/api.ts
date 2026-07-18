@@ -30,6 +30,21 @@ export interface HeraSession {
   session_json_size: number | null;
 }
 
+/** Basename of a path, tolerant of both `/` (Unix) and `\` (Windows) separators —
+ *  paths come from the Rust backend's `PathBuf` serialization, which is
+ *  platform-native and never normalized to `/`. */
+export function basename(path: string): string {
+  return path.split(/[/\\]/).pop() ?? path;
+}
+
+/** Parent directory of a path, tolerant of both `/` and `\` separators. */
+export function dirname(path: string): string {
+  const parts = path.split(/[/\\]/);
+  const sep = path.includes("\\") && !path.includes("/") ? "\\" : "/";
+  parts.pop();
+  return parts.join(sep);
+}
+
 export function parseSessionFilename(stem: string): Pick<HeraSession, "date" | "time" | "operator" | "place"> {
   const parts = stem.split("_");
   if (parts.length >= 3 && parts[0].length === 14) {
@@ -322,6 +337,10 @@ export const api = {
 
   pickFolder: () =>
     dialogOpen({ directory: true, multiple: false }) as Promise<string | null>,
+
+  /** Resolve a tool: absolute path is checked for existence; a bare command
+   *  name is looked up on PATH (PATHEXT too, on Windows). */
+  resolveTool: (tool: string) => invoke<boolean>("resolve_tool", { tool }),
 
   jobProvenance: (jobId: string) => invoke<unknown[]>("job_provenance", { jobId }),
 

@@ -1,5 +1,5 @@
 import React from "react";
-import { api, Job, Artifact } from "../api";
+import { api, Job, Artifact, basename, dirname } from "../api";
 
 interface MapEntry {
   job: Job;
@@ -32,8 +32,7 @@ export function MemoryView() {
     }
   }
 
-  const inputName = (path: string) =>
-    path.split("/").pop()?.replace(/\.hera$/, "") ?? path;
+  const inputName = (path: string) => basename(path).replace(/\.hera$/, "");
 
   return (
     <div className="hs-view">
@@ -103,7 +102,7 @@ function MapCard({ entry, inputName }: { entry: MapEntry; inputName: (p: string)
           </span>
           {plyPath && (
             <span style={{ fontSize: 10, color: "rgba(65,205,82,.7)", fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace" }}>
-              {plyPath.split("/").pop()}
+              {basename(plyPath)}
             </span>
           )}
         </div>
@@ -134,7 +133,7 @@ function MapCard({ entry, inputName }: { entry: MapEntry; inputName: (p: string)
         )}
         <button
           className="hs-btn hs-btn-sm"
-          onClick={() => api.openPath(job.input_path.split("/").slice(0, -1).join("/"))}
+          onClick={() => api.openPath(dirname(job.input_path))}
         >
           打开目录
         </button>

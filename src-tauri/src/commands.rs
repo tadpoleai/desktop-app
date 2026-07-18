@@ -377,6 +377,52 @@ pub fn open_path(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Resolve whether an external tool is available: a path (containing a separator,
+/// or absolute) is checked for existence directly; a bare command name (e.g.
+/// "cloudcompare") is searched on `PATH` — `where`/`which` aren't portable, so this
+/// walks `PATH` by hand, trying `PATHEXT` suffixes on Windows since bare names there
+/// don't include `.exe`/`.bat`/etc.
+#[tauri::command]
+pub fn resolve_tool(tool: String) -> bool {
+    let trimmed = tool.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let p = Path::new(trimmed);
+    if p.is_absolute() || trimmed.contains('/') || trimmed.contains('\\') {
+        return p.is_file();
+    }
+
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return false;
+    };
+
+    #[cfg(target_os = "windows")]
+    let exts: Vec<String> = {
+        let mut v = vec![String::new()]; // in case the caller already included an extension
+        v.extend(
+            std::env::var("PATHEXT")
+                .unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".to_string())
+                .split(';')
+                .map(|s| s.to_string()),
+        );
+        v
+    };
+    #[cfg(not(target_os = "windows"))]
+    let exts: Vec<String> = vec![String::new()];
+
+    for dir in std::env::split_paths(&path_var) {
+        for ext in &exts {
+            let candidate = dir.join(format!("{trimmed}{ext}"));
+            if candidate.is_file() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // ── Config ────────────────────────────────────────────────────────────────────
 
 #[tauri::command]

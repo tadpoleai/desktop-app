@@ -1,6 +1,6 @@
 import React from "react";
 import { Select, Tooltip } from "antd";
-import { api, Job, Artifact } from "../api";
+import { api, Job, Artifact, dirname } from "../api";
 
 const STATUS_INFO: Record<string, { cls: string; label: string; dot: string }> = {
   success:   { cls: "hs-tag-green",  label: "成功",  dot: "#199a3e" },
@@ -133,8 +133,8 @@ export function TaskView() {
                       </td>
                     </tr>
                   ) : artifacts.map((a) => {
-                    const isDir = !/\.[^/]+$/.test(a.host_path);
-                    const dirPath = isDir ? a.host_path : a.host_path.split("/").slice(0, -1).join("/");
+                    const isDir = !/\.[^/\\]+$/.test(a.host_path);
+                    const dirPath = isDir ? a.host_path : dirname(a.host_path);
                     const isViewable = /\.(ply|pcd|bag|db3)$/i.test(a.host_path);
                     return (
                       <tr key={a.id}>

@@ -1,5 +1,5 @@
 import React from "react";
-import { api, Dataset, HeraFileInfo, HeraSession, parseSessionFilename } from "../api";
+import { api, Dataset, HeraFileInfo, HeraSession, basename, dirname, parseSessionFilename } from "../api";
 import { toast } from "../components/toast";
 
 interface Props {
@@ -87,7 +87,7 @@ export function DataView({ onSessionOpen, currentSession }: Props) {
               点击「打开 .hera」<br/>或扫描数据目录
             </div>
           ) : heraSessions.map((ds) => {
-            const parsed = parseSessionFilename(ds.path.split("/").pop()?.replace(/\.hera$/, "") ?? "");
+            const parsed = parseSessionFilename(basename(ds.path).replace(/\.hera$/, ""));
             const isActive = selected?.path === ds.path;
             return (
               <div
@@ -105,7 +105,7 @@ export function DataView({ onSessionOpen, currentSession }: Props) {
                 onMouseLeave={(e) => { if (!isActive) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
               >
                 <div style={{ fontFamily: "'IBM Plex Mono','Cascadia Code','Courier New',monospace", fontSize: 11, color: "#232323", fontWeight: 500, marginBottom: 3 }}>
-                  {ds.path.split("/").pop()?.replace(/\.hera$/, "")}
+                  {basename(ds.path).replace(/\.hera$/, "")}
                 </div>
                 <div style={{ fontSize: 11, color: "#8a8a8a", display: "flex", gap: 5 }}>
                   <span>{parsed.date}</span>
@@ -311,7 +311,7 @@ function SessionDetail({ session, onOpenInRun }: { session: HeraSession; onOpenI
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
             开始重建…
           </button>
-          <button className="hs-btn" style={{ height: 30 }} onClick={() => api.openPath(session.path.split("/").slice(0, -1).join("/"))}>
+          <button className="hs-btn" style={{ height: 30 }} onClick={() => api.openPath(dirname(session.path))}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7h5l2-2h4l2 2h5v12H3z"/></svg>
             打开目录
           </button>

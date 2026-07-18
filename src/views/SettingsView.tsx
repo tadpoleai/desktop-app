@@ -18,6 +18,18 @@ export function SettingsView({ onConfigSaved }: Props) {
     glim_config_dir: "",
     pointcloud_viewer: "",
   });
+  const [toolCheck, setToolCheck] = React.useState<"unknown" | "ok" | "missing">("unknown");
+
+  React.useEffect(() => {
+    const tool = vals.pointcloud_viewer.trim();
+    if (!tool) { setToolCheck("unknown"); return; }
+    const timer = setTimeout(() => {
+      api.resolveTool(tool)
+        .then((found) => setToolCheck(found ? "ok" : "missing"))
+        .catch(() => setToolCheck("missing"));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [vals.pointcloud_viewer]);
 
   React.useEffect(() => {
     setLoading(true);
@@ -38,6 +50,16 @@ export function SettingsView({ onConfigSaved }: Props) {
 
   function set(key: string, value: unknown) {
     setVals((v) => ({ ...v, [key]: value }));
+  }
+
+  async function browseFolder(key: "output_dir" | "data_dir" | "glim_config_dir") {
+    const path = await api.pickFolder();
+    if (path) set(key, path);
+  }
+
+  async function browseTool() {
+    const path = await api.pickFile();
+    if (path) set("pointcloud_viewer", path);
   }
 
   async function save() {
@@ -115,34 +137,52 @@ export function SettingsView({ onConfigSaved }: Props) {
               <label className="hs-input-label">
                 输出目录 <span style={{ color: "#b0b0b0" }}>— 留空则使用 ./hera-output</span>
               </label>
-              <input
-                className="hs-input mono"
-                value={vals.output_dir}
-                onChange={(e) => set("output_dir", e.target.value)}
-                placeholder="留空使用默认值"
-              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  className="hs-input mono"
+                  style={{ flex: 1 }}
+                  value={vals.output_dir}
+                  onChange={(e) => set("output_dir", e.target.value)}
+                  placeholder="留空使用默认值"
+                />
+                <button className="hs-btn" style={{ height: 28, flexShrink: 0 }} onClick={() => browseFolder("output_dir")}>
+                  浏览…
+                </button>
+              </div>
             </div>
             <div className="hs-input-group">
               <label className="hs-input-label">
                 数据目录 <span style={{ color: "#b0b0b0" }}>— 默认扫描路径</span>
               </label>
-              <input
-                className="hs-input mono"
-                value={vals.data_dir}
-                onChange={(e) => set("data_dir", e.target.value)}
-                placeholder="可选"
-              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  className="hs-input mono"
+                  style={{ flex: 1 }}
+                  value={vals.data_dir}
+                  onChange={(e) => set("data_dir", e.target.value)}
+                  placeholder="可选"
+                />
+                <button className="hs-btn" style={{ height: 28, flexShrink: 0 }} onClick={() => browseFolder("data_dir")}>
+                  浏览…
+                </button>
+              </div>
             </div>
             <div className="hs-input-group">
               <label className="hs-input-label">
                 GLIM 配置目录 <span style={{ color: "#b0b0b0" }}>— 留空自动缓存到 ~/.cache/hera</span>
               </label>
-              <input
-                className="hs-input mono"
-                value={vals.glim_config_dir}
-                onChange={(e) => set("glim_config_dir", e.target.value)}
-                placeholder="留空使用默认值"
-              />
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  className="hs-input mono"
+                  style={{ flex: 1 }}
+                  value={vals.glim_config_dir}
+                  onChange={(e) => set("glim_config_dir", e.target.value)}
+                  placeholder="留空使用默认值"
+                />
+                <button className="hs-btn" style={{ height: 28, flexShrink: 0 }} onClick={() => browseFolder("glim_config_dir")}>
+                  浏览…
+                </button>
+              </div>
             </div>
           </div>
 
@@ -150,16 +190,27 @@ export function SettingsView({ onConfigSaved }: Props) {
 
           {/* 外部工具 */}
           <div style={{ fontWeight: 600, fontSize: 12.5, marginBottom: 12, color: "#444" }}>外部工具</div>
-          <div className="hs-input-group" style={{ marginBottom: 16, maxWidth: 280 }}>
+          <div className="hs-input-group" style={{ marginBottom: 16, maxWidth: 400 }}>
             <label className="hs-input-label">
-              点云查看器 <span style={{ color: "#b0b0b0" }}>— 如 cloudcompare、meshlab</span>
+              点云查看器 <span style={{ color: "#b0b0b0" }}>— 如 cloudcompare、meshlab，或选择应用程序路径</span>
             </label>
-            <input
-              className="hs-input mono"
-              value={vals.pointcloud_viewer}
-              onChange={(e) => set("pointcloud_viewer", e.target.value)}
-              placeholder="cloudcompare"
-            />
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                className="hs-input mono"
+                style={{ flex: 1 }}
+                value={vals.pointcloud_viewer}
+                onChange={(e) => set("pointcloud_viewer", e.target.value)}
+                placeholder="cloudcompare"
+              />
+              <button className="hs-btn" style={{ height: 28, flexShrink: 0 }} onClick={browseTool}>
+                浏览…
+              </button>
+            </div>
+            {toolCheck === "missing" && (
+              <div style={{ color: "#cf3a3f", fontSize: 11, marginTop: 5 }}>
+                未检测到该工具，请确认已安装并且路径正确
+              </div>
+            )}
           </div>
 
           <button className="hs-btn hs-btn-primary" onClick={save} disabled={saving} style={{ height: 30 }}>
