@@ -76,7 +76,7 @@ export function RunView({ onCrumbChange, currentSession, onRequestSession }: Pro
           if ("default" in v) defaults[k] = v.default;
         }
       } else {
-        for (const p of node.param_schema) defaults[p.id] = p.default;
+        for (const p of node.param_schema ?? []) defaults[p.id] = p.default;
       }
       data[node.id] = { ...defaults, ...node.params };
     }
@@ -373,9 +373,14 @@ function NodeParamPanel({ node, version, paramData, onVersionChange, onChange }:
     ? (node.params_schema as { properties?: Record<string, SchemaProp> }).properties ?? {}
     : null;
 
+  // node.param_schema is a legacy fallback array — the backend sends JSON `null`
+  // (not `[]`) when the operator manifest couldn't be resolved at all (e.g. not
+  // yet registered in "算子仓库", or no bundled operators/ dir in this build).
+  // Guard against that so an unregistered operator shows a message instead of
+  // crashing the whole page with `.map()` on null.
   const entries: Array<{ id: string; schema: SchemaProp }> = schemaProps
     ? Object.entries(schemaProps).map(([id, s]) => ({ id, schema: s }))
-    : node.param_schema.map((p) => ({
+    : (node.param_schema ?? []).map((p) => ({
         id: p.id,
         schema: {
           type: p.type === "bool" ? "boolean" : p.type === "number[3]" ? "array" : p.type === "enum" ? "string" : p.type,
@@ -432,6 +437,10 @@ function NodeParamPanel({ node, version, paramData, onVersionChange, onChange }:
               </label>
             );
           })}
+        </div>
+      ) : node.available_versions.length === 0 ? (
+        <div style={{ padding: "12px 14px", fontSize: 12, color: "#cf3a3f" }}>
+          算子「{node.operator}」尚未注册，请先前往「算子仓库」添加该算子后再运行。
         </div>
       ) : (
         <div style={{ padding: "12px 14px", fontSize: 12, color: "#9a9a9a" }}>无可配置参数</div>

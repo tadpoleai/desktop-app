@@ -34,7 +34,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../workflows": "workflows"
+      "../workflows": "workflows",
+      "../operators": "operators"
     }
   }
 }

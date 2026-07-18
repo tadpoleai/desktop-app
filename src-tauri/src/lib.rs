@@ -18,21 +18,30 @@ pub fn run() {
                 hera_runner::config::AppConfig::default()
             };
 
-            // workflows: in a bundled install they live in resource_dir/workflows (packed by tauri).
-            // In dev mode (HERA_WORKSPACE set, or operators/ found on disk) use the source tree.
+            // workflows/operators: in a bundled install they live in resource_dir/{workflows,operators}
+            // (packed by tauri, see bundle.resources in tauri.conf.json). In dev mode
+            // (HERA_WORKSPACE set, or operators/ found on disk) use the source tree.
             let workspace_root = resolve_workspace_root();
             std::env::set_current_dir(&workspace_root).ok();
-            let operators_dir = workspace_root.join("operators");
+
+            let resource_dir = app.path().resource_dir().ok();
 
             // Prefer bundled resource_dir/workflows (production .deb/.AppImage/.exe),
             // fall back to workspace_root/workflows (dev / HERA_WORKSPACE).
-            let workflows_dir = app
-                .path()
-                .resource_dir()
-                .ok()
+            let workflows_dir = resource_dir
+                .as_ref()
                 .map(|r| r.join("workflows"))
                 .filter(|p| p.exists())
                 .unwrap_or_else(|| workspace_root.join("workflows"));
+
+            // Same precedence for operator manifests — without this, bundled installs have
+            // no filesystem fallback when an operator isn't yet registered in the (empty,
+            // freshly-created) local registry, and workflow config panels render blank.
+            let operators_dir = resource_dir
+                .as_ref()
+                .map(|r| r.join("operators"))
+                .filter(|p| p.exists())
+                .unwrap_or_else(|| workspace_root.join("operators"));
 
             let db_path = app_dir.join("registry.sqlite");
             let registry = hera_runner::registry::Registry::open(&db_path)

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { App as AntApp, ConfigProvider } from "antd";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { _msgRef, _notifRef, toast } from "./components/toast";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { heraTheme } from "./theme";
 import { api, AppConfig, JobEvent, HeraSession } from "./api";
 import { DataView } from "./views/DataView";
@@ -237,6 +238,7 @@ export function App() {
 
             {/* Main content */}
             <div className="hs-content">
+              <ErrorBoundary resetKey={view}>
               {view === "data" && (
                 <DataView
                   currentSession={currentSession}
@@ -254,6 +256,7 @@ export function App() {
               {view === "memory"    && <MemoryView />}
               {view === "operators" && <OperatorsView />}
               {view === "settings"  && <SettingsView onConfigSaved={setConfig} />}
+              </ErrorBoundary>
             </div>
 
             {/* Output pane */}

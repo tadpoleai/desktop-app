@@ -102,7 +102,8 @@ export interface NodeDetail {
   available_versions: string[];
   params: Record<string, unknown>;
   params_schema?: Record<string, unknown>;
-  param_schema: ParamSchema[];
+  /** `null` when the operator manifest couldn't be resolved (not yet registered, etc.) — not just possibly-empty. */
+  param_schema: ParamSchema[] | null;
 }
 
 export interface WorkflowDetail extends WorkflowSummary {
