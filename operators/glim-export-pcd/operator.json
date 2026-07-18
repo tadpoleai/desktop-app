@@ -2,7 +2,7 @@
   "id": "glim-export-pcd",
   "name": "点云导出",
   "version": "0.1",
-  "image": "hera-export-pcd:local",
+  "image": "crpi-wzvoh0tsm7bwb22w.cn-shanghai.personal.cr.aliyuncs.com/glim/hera-export-pcd:latest",
   "gpu": "none",
   "mounts": [],
   "inputs": [

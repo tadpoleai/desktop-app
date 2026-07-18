@@ -236,6 +236,37 @@ export const OFFICIAL_OPERATORS: OfficialOperator[] = [
       command: "hera_to_rosbag {in:raw} -o {out:bag} --window {param:window} --imu-topic {param:imu_topic} --points-topic {param:points_topic} {param:verbose}",
     },
   },
+  {
+    id: "glim-export-pcd",
+    name: "点云导出",
+    description: "将 GLIM 重建输出的地图目录导出为点云文件 (.ply/.pcd/.csv)",
+    imageRef: "crpi-wzvoh0tsm7bwb22w.cn-shanghai.personal.cr.aliyuncs.com/glim/hera-export-pcd",
+    latestTag: "latest",
+    manifest: {
+      spec: "1",
+      id: "glim-export-pcd",
+      name: "点云导出",
+      version: "latest",
+      gpu: "none",
+      mounts: [],
+      inputs: [
+        { id: "map", type: "dir", container: "/input/map" },
+      ],
+      outputs: [
+        { id: "cloud", type: "file", container: "/output/map_export.ply" },
+      ],
+      params_schema: {
+        type: "object",
+        properties: {
+          format: { type: "string", enum: ["ply", "pcd", "csv"], default: "ply", title: "输出格式" },
+        },
+      },
+      params_bindings: {
+        format: { mode: "arg", flag: "--format" },
+      },
+      command: "python3 /opt/scripts/export_map_pcd.py /input/map -o {out:cloud} --format {param:format}",
+    },
+  },
 ];
 
 export interface OperatorVersionInfo {
