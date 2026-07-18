@@ -108,6 +108,12 @@ async fn run_workflow_inner(
     let job_dir = job_dir
         .canonicalize()
         .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(job_dir));
+    // On Windows, canonicalize() always returns the `\\?\` extended-length ("verbatim")
+    // prefix form (e.g. `\\?\C:\Program Files\...`). Docker Desktop's bind-mount spec
+    // parser doesn't understand it — combined with the drive-letter colon it miscounts
+    // colons in `host:container:mode` and rejects the mount ("too many colons"). Strip
+    // it back to the plain `C:\...` form Docker expects; no-op elsewhere.
+    let job_dir = strip_windows_verbatim_prefix(job_dir);
 
     let sorted = workflow.topo_sorted_nodes();
 
@@ -416,6 +422,60 @@ pub fn extract_config_from_image(
         )));
     }
     Ok(())
+}
+
+/// Strip the Windows `\\?\` verbatim-path prefix that `Path::canonicalize()` always
+/// adds on that platform (`\\?\C:\...` -> `C:\...`, `\\?\UNC\server\share` ->
+/// `\\server\share`). A plain string match, not `#[cfg(windows)]`-gated: the prefix
+/// never appears in paths produced on Linux/macOS, so this is a no-op there.
+fn strip_windows_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        path
+    }
+}
+
+#[cfg(test)]
+mod verbatim_prefix_tests {
+    use super::*;
+
+    #[test]
+    fn strips_local_drive_verbatim_prefix() {
+        // Exact case reported from a real Windows run.
+        let p = PathBuf::from(
+            r"\\?\C:\Program Files\Hera Desktop\hera-output\20acbfb3-a9da-4024-b030-5bfb9335553f\step_recon\map",
+        );
+        let got = strip_windows_verbatim_prefix(p);
+        assert_eq!(
+            got.to_string_lossy(),
+            r"C:\Program Files\Hera Desktop\hera-output\20acbfb3-a9da-4024-b030-5bfb9335553f\step_recon\map"
+        );
+    }
+
+    #[test]
+    fn strips_unc_verbatim_prefix() {
+        let p = PathBuf::from(r"\\?\UNC\server\share\dir");
+        let got = strip_windows_verbatim_prefix(p);
+        assert_eq!(got.to_string_lossy(), r"\\server\share\dir");
+    }
+
+    #[test]
+    fn leaves_plain_unix_path_untouched() {
+        let p = PathBuf::from("/home/user/hera-output/job/step/map");
+        let got = strip_windows_verbatim_prefix(p.clone());
+        assert_eq!(got, p);
+    }
+
+    #[test]
+    fn leaves_plain_windows_path_untouched() {
+        let p = PathBuf::from(r"C:\Users\fred\hera-output\job\step\map");
+        let got = strip_windows_verbatim_prefix(p.clone());
+        assert_eq!(got, p);
+    }
 }
 
 fn copy_dir_all(src: &Path, dst: &Path) -> anyhow::Result<()> {
