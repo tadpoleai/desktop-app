@@ -72,12 +72,23 @@ impl AppConfig {
         Ok(cfg)
     }
 
+    /// Default: ~/hera-output. Must be an absolute, reliably-writable path — a
+    /// relative default ("./hera-output") resolves against whatever directory the
+    /// process happens to inherit as its cwd, which for a packaged desktop app is
+    /// unpredictable (varies by launcher/session) and can easily not be writable
+    /// by the running user, failing every job instantly with a bare "Permission
+    /// denied (os error 13)" before a container is ever started. Reproduced via a
+    /// real .deb install where the inherited cwd was root-owned.
     pub fn output_dir(&self) -> PathBuf {
         self.data
             .output_dir
             .as_deref()
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("./hera-output"))
+            .unwrap_or_else(|| {
+                dirs_next::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("hera-output")
+            })
     }
 
     pub fn glim_config_dir(&self) -> Option<PathBuf> {

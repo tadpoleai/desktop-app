@@ -284,6 +284,27 @@ export function App() {
                 </button>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 9, color: "#8a8a8a" }}>
                   <button
+                    onClick={async () => {
+                      // Right-click has no native context menu in this webview (Tauri
+                      // disables it by default), so drag-select + right-click "复制"
+                      // silently does nothing — this button is the only discoverable
+                      // way to copy log output.
+                      try {
+                        await navigator.clipboard.writeText(logs.map((l) => l.text).join("\n"));
+                        toast.success("已复制到剪贴板");
+                      } catch {
+                        toast.error("复制失败");
+                      }
+                    }}
+                    disabled={logs.length === 0}
+                    style={{ background: "none", border: "none", cursor: logs.length === 0 ? "default" : "pointer", color: logs.length === 0 ? "#c4c4c4" : "#8a8a8a", padding: "2px 4px" }}
+                    title="复制日志"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                      <rect x="9" y="9" width="12" height="12" rx="1.5"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>
+                    </svg>
+                  </button>
+                  <button
                     onClick={() => setLogs([])}
                     style={{ background: "none", border: "none", cursor: "pointer", color: "#8a8a8a", padding: "2px 4px" }}
                     title="清空日志"
