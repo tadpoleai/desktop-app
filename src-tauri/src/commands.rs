@@ -100,7 +100,7 @@ pub fn get_workflow(id: String, state: State<AppState>) -> Result<serde_json::Va
         let pinned_version = node.version.clone().unwrap_or_else(|| "latest".to_string());
 
         // Resolve params_schema from registry (preferred) or file fallback
-        let (params_schema, param_schema_legacy) = {
+        let (params_schema, param_schema_legacy, gpu) = {
             let from_registry = reg
                 .resolve_operator(&node.operator, &pinned_version)
                 .ok()
@@ -111,6 +111,7 @@ pub fn get_workflow(id: String, state: State<AppState>) -> Result<serde_json::Va
 
             if let Some(manifest) = from_registry {
                 let schema = manifest.get("params_schema").cloned();
+                let gpu = manifest.get("gpu").and_then(|v| v.as_str()).map(str::to_string);
                 // Also synthesize legacy param_schema array for backwards-compat
                 let legacy = {
                     let op_path = state.operators_dir.join(&node.operator).join("operator.json");
@@ -118,13 +119,18 @@ pub fn get_workflow(id: String, state: State<AppState>) -> Result<serde_json::Va
                         .map(|op| serde_json::to_value(&op.params).unwrap_or(serde_json::Value::Null))
                         .unwrap_or(serde_json::Value::Null)
                 };
-                (schema, legacy)
+                (schema, legacy, gpu)
             } else {
                 let op_path = state.operators_dir.join(&node.operator).join("operator.json");
-                let legacy = hera_runner::manifest::Operator::load(&op_path)
+                let op_loaded = hera_runner::manifest::Operator::load(&op_path).ok();
+                let legacy = op_loaded
+                    .as_ref()
                     .map(|op| serde_json::to_value(&op.params).unwrap_or(serde_json::Value::Null))
                     .unwrap_or(serde_json::Value::Null);
-                (None, legacy)
+                let gpu = op_loaded
+                    .and_then(|op| serde_json::to_value(&op.gpu).ok())
+                    .and_then(|v| v.as_str().map(str::to_string));
+                (None, legacy, gpu)
             }
         };
 
@@ -136,6 +142,7 @@ pub fn get_workflow(id: String, state: State<AppState>) -> Result<serde_json::Va
             "params": node.params,
             "params_schema": params_schema,
             "param_schema": param_schema_legacy,
+            "gpu": gpu,
         }));
     }
 
@@ -421,6 +428,14 @@ pub fn resolve_tool(tool: String) -> bool {
         }
     }
     false
+}
+
+/// Whether a real, working NVIDIA GPU is present — `nvidia-smi` only exits 0 when
+/// the driver is actually loaded and can see a device, so this also catches "driver
+/// installed but no GPU attached" cases, not just "binary exists on PATH".
+#[tauri::command]
+pub fn detect_gpu() -> bool {
+    hera_runner::gpu::detect_nvidia_gpu()
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────

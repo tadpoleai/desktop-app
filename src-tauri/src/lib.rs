@@ -15,7 +15,11 @@ pub fn run() {
             let cfg = if config_path.exists() {
                 hera_runner::config::AppConfig::load(&config_path).unwrap_or_default()
             } else {
-                hera_runner::config::AppConfig::default()
+                // First run, no saved preference yet: default GPU support to whatever
+                // matches the actual hardware instead of always starting off.
+                let mut cfg = hera_runner::config::AppConfig::default();
+                cfg.runtime.gpu_enabled = hera_runner::gpu::detect_nvidia_gpu();
+                cfg
             };
 
             // workflows/operators: in a bundled install they live in resource_dir/{workflows,operators}
@@ -77,6 +81,7 @@ pub fn run() {
             commands::job_artifacts,
             commands::open_path,
             commands::resolve_tool,
+            commands::detect_gpu,
             commands::get_config,
             commands::set_config,
             commands::operator_add,

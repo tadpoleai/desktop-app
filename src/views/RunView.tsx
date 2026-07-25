@@ -30,6 +30,7 @@ export function RunView({ onCrumbChange, currentSession, onRequestSession }: Pro
   const [running, setRunning] = React.useState(false);
   const [paramData, setParamData] = React.useState<Record<string, Record<string, unknown>>>({});
   const [nodeVersions, setNodeVersions] = React.useState<Record<string, string>>({});
+  const [gpuStatus, setGpuStatus] = React.useState<{ present: boolean; enabled: boolean } | null>(null);
 
   React.useEffect(() => {
     api.listWorkflows().then(setWorkflows).catch(() => {});
@@ -82,6 +83,14 @@ export function RunView({ onCrumbChange, currentSession, onRequestSession }: Pro
     }
     setParamData(data);
     setNodeVersions(versions);
+
+    const needsGpu = wf.nodes.some((n) => n.gpu === "required");
+    if (needsGpu) {
+      const [present, cfg] = await Promise.all([api.detectGpu(), api.getConfig()]);
+      setGpuStatus({ present, enabled: cfg.runtime.gpu_enabled });
+    } else {
+      setGpuStatus(null);
+    }
   }
 
   function goBack() {
@@ -101,8 +110,15 @@ export function RunView({ onCrumbChange, currentSession, onRequestSession }: Pro
     if (result) setInputPath(result as string);
   }
 
+  const gpuBlockedReason =
+    gpuStatus && !gpuStatus.present
+      ? "此功能需要本机 NVIDIA GPU，当前设备未检测到可用 GPU。"
+      : gpuStatus && gpuStatus.present && !gpuStatus.enabled
+        ? "检测到本机 GPU，但尚未在「设置」中启用 GPU 支持。"
+        : null;
+
   async function startRun() {
-    if (!inputPath.trim() || !selected) return;
+    if (!inputPath.trim() || !selected || gpuBlockedReason) return;
     const paramOverrides: Record<string, Record<string, unknown>> = {};
     for (const node of selected.nodes) paramOverrides[node.id] = paramData[node.id] ?? {};
     const initStates: Record<string, StepState> = {};
@@ -182,6 +198,21 @@ export function RunView({ onCrumbChange, currentSession, onRequestSession }: Pro
           <span style={{ fontWeight: 600, fontSize: 14 }}>{selected.name}</span>
         </div>
 
+        {gpuBlockedReason && (
+          <div style={{
+            background: "rgba(207,58,63,.06)", border: "1px solid rgba(207,58,63,.25)",
+            borderRadius: 6, padding: "10px 14px", display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#cf3a3f" strokeWidth="2" style={{ flexShrink: 0 }}>
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span style={{ fontSize: 12.5, color: "#a8323a" }}>{gpuBlockedReason}</span>
+            {gpuStatus?.present && !gpuStatus.enabled && (
+              <span style={{ marginLeft: "auto", fontSize: 11.5, color: "#9a9a9a" }}>前往「设置」页开启「启用 GPU」</span>
+            )}
+          </div>
+        )}
+
         {/* Input: session banner or manual path */}
         {currentSession ? (
           <div style={{ background: "rgba(65,205,82,.06)", border: "1px solid rgba(65,205,82,.25)", borderRadius: 6, padding: "10px 14px" }}>
@@ -259,16 +290,16 @@ export function RunView({ onCrumbChange, currentSession, onRequestSession }: Pro
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <button
             onClick={startRun}
-            disabled={running || !inputPath.trim()}
+            disabled={running || !inputPath.trim() || !!gpuBlockedReason}
             style={{
               height: 32, padding: "0 16px",
               background: "linear-gradient(#4bd85e, #33bf47)",
               border: "1px solid #2ba63d", borderRadius: 5,
               fontSize: 13, fontWeight: 600, color: "#fff",
-              cursor: running || !inputPath.trim() ? "not-allowed" : "pointer",
+              cursor: running || !inputPath.trim() || gpuBlockedReason ? "not-allowed" : "pointer",
               display: "inline-flex", alignItems: "center", gap: 7,
               boxShadow: "0 1px 2px rgba(0,0,0,.12)", fontFamily: "inherit",
-              opacity: running || !inputPath.trim() ? 0.5 : 1,
+              opacity: running || !inputPath.trim() || gpuBlockedReason ? 0.5 : 1,
             }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>

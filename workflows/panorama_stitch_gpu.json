@@ -1,7 +1,7 @@
 {
   "id": "panorama_stitch_gpu",
-  "name": "全景拼接（本机 GPU）",
-  "description": "输入 .insv 双鱼眼视频文件（与 .hera 会话同目录），在本机 NVIDIA GPU 上直接用 MediaSDKTest 拼接为全景视频，不经过网络/OSS/云端服务",
+  "name": "全景拼接",
+  "description": "输入 .insv 双鱼眼视频文件（与 .hera 会话同目录），使用本机 NVIDIA GPU 拼接为全景视频。需要本机 GPU 支持",
   "input": {
     "type": "file",
     "ext": [".insv"],

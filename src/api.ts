@@ -119,6 +119,8 @@ export interface NodeDetail {
   params_schema?: Record<string, unknown>;
   /** `null` when the operator manifest couldn't be resolved (not yet registered, etc.) — not just possibly-empty. */
   param_schema: ParamSchema[] | null;
+  /** "required" | "optional" | "none" | null (manifest unresolved) */
+  gpu?: string | null;
 }
 
 export interface WorkflowDetail extends WorkflowSummary {
@@ -435,6 +437,9 @@ export const api = {
   /** Resolve a tool: absolute path is checked for existence; a bare command
    *  name is looked up on PATH (PATHEXT too, on Windows). */
   resolveTool: (tool: string) => invoke<boolean>("resolve_tool", { tool }),
+
+  /** Whether a real, working NVIDIA GPU is present (`nvidia-smi` succeeds). */
+  detectGpu: () => invoke<boolean>("detect_gpu"),
 
   jobProvenance: (jobId: string) => invoke<unknown[]>("job_provenance", { jobId }),
 
