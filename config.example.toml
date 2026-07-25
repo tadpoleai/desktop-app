@@ -36,3 +36,10 @@ db_path = "./registry.sqlite"
 # 凭据放 .env 或环境变量 HERA_REGISTRY_PASSWORD，不要写在此文件里
 # registry_url = "crpi-wzvoh0tsm7bwb22w.cn-shanghai.personal.cr.aliyuncs.com"
 # username = ""
+
+# OSS（全景拼接算子等需要经 OSS 中转大文件的算子会用到，见 runner/src/dag.rs）
+# 同样不放在此文件里 —— 在启动 App 的 shell 环境中 export，runner 会原样透传进容器：
+#   export OSS_ACCESS_KEY_ID=...
+#   export OSS_ACCESS_KEY_SECRET=...
+#   export OSS_BUCKET=uploaded-hera
+#   export OSS_ENDPOINT=https://oss-cn-shanghai.aliyuncs.com

@@ -1,0 +1,32 @@
+{
+  "id": "panorama_stitch_gpu",
+  "name": "全景拼接（本机 GPU）",
+  "description": "输入 .insv 双鱼眼视频文件（与 .hera 会话同目录），在本机 NVIDIA GPU 上直接用 MediaSDKTest 拼接为全景视频，不经过网络/OSS/云端服务",
+  "input": {
+    "type": "file",
+    "ext": [".insv"],
+    "label": "输入 .insv 文件（与 .hera 同目录同名）"
+  },
+  "nodes": [
+    {
+      "id": "step_stitch",
+      "operator": "panorama-stitch-gpu",
+      "params": {
+        "stitch_type": "optflow",
+        "output_size": "3840x1920",
+        "flowstate": false,
+        "h265": false,
+        "colorplus": false,
+        "denoise": false,
+        "deflicker": false,
+        "defringe": false,
+        "verbose": false
+      }
+    }
+  ],
+  "edges": [],
+  "workflow_input_to": {
+    "node": "step_stitch",
+    "input": "insv"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "id": "panorama_stitch",
+  "name": "全景拼接",
+  "description": "输入 .insv 双鱼眼视频文件（与 .hera 会话同目录），通过阿里云 FC GPU 服务用 Insta360 MediaSDK 拼接为全景视频",
+  "input": {
+    "type": "file",
+    "ext": [".insv"],
+    "label": "输入 .insv 文件（与 .hera 同目录同名）"
+  },
+  "nodes": [
+    {
+      "id": "step_stitch",
+      "operator": "panorama-stitch",
+      "params": {
+        "stitch_type": "optflow",
+        "output_size": "3840x1920",
+        "flowstate": false,
+        "h265": false,
+        "colorplus": false,
+        "denoise": false,
+        "deflicker": false,
+        "defringe": false,
+        "verbose": false
+      }
+    }
+  ],
+  "edges": [],
+  "workflow_input_to": {
+    "node": "step_stitch",
+    "input": "insv"
+  }
+}

@@ -1,0 +1,225 @@
+{
+  "spec": "1",
+  "id": "panorama-stitch-gpu",
+  "name": "全景拼接（本机 GPU）",
+  "version": "0.1",
+  "image": "crpi-wzvoh0tsm7bwb22w.cn-shanghai.personal.cr.aliyuncs.com/glim/hera-panorama-stitch-gpu:latest",
+  "gpu": "required",
+  "mounts": [],
+  "inputs": [
+    {
+      "id": "insv",
+      "type": "file",
+      "ext": [
+        ".insv"
+      ],
+      "container": "/data/input"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "panorama",
+      "type": "file",
+      "container": "/output/panorama.mp4"
+    }
+  ],
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "stitch_type": {
+        "type": "string",
+        "enum": [
+          "optflow",
+          "template",
+          "dynamicstitch",
+          "aistitch"
+        ],
+        "default": "optflow",
+        "title": "拼接算法",
+        "description": "optflow: 光流拼接（默认，质量最好）；template: 模板拼接（最快）；dynamicstitch: 动态拼接；aistitch: AI 拼接"
+      },
+      "output_size": {
+        "type": "string",
+        "default": "3840x1920",
+        "title": "输出分辨率",
+        "description": "格式 宽x高，如 3840x1920"
+      },
+      "flowstate": {
+        "type": "boolean",
+        "default": false,
+        "title": "FlowState 防抖"
+      },
+      "h265": {
+        "type": "boolean",
+        "default": false,
+        "title": "H265 编码",
+        "description": "关闭则使用 H264"
+      },
+      "colorplus": {
+        "type": "boolean",
+        "default": false,
+        "title": "ColorPlus 色彩增强"
+      },
+      "denoise": {
+        "type": "boolean",
+        "default": false,
+        "title": "降噪"
+      },
+      "deflicker": {
+        "type": "boolean",
+        "default": false,
+        "title": "去闪烁"
+      },
+      "defringe": {
+        "type": "boolean",
+        "default": false,
+        "title": "去紫边"
+      },
+      "verbose": {
+        "type": "boolean",
+        "default": false,
+        "title": "详细日志"
+      }
+    }
+  },
+  "params_bindings": {
+    "stitch_type": {
+      "mode": "arg",
+      "flag": "-stitch_type"
+    },
+    "output_size": {
+      "mode": "arg",
+      "flag": "-output_size"
+    },
+    "flowstate": {
+      "mode": "arg",
+      "flag": "-enable_flowstate"
+    },
+    "h265": {
+      "mode": "arg",
+      "flag": "-enable_h265_encoder"
+    },
+    "colorplus": {
+      "mode": "arg",
+      "flag": "-enable_colorplus"
+    },
+    "denoise": {
+      "mode": "arg",
+      "flag": "-enable_denoise"
+    },
+    "deflicker": {
+      "mode": "arg",
+      "flag": "-enable_deflicker"
+    },
+    "defringe": {
+      "mode": "arg",
+      "flag": "-enable_defringe"
+    },
+    "verbose": {
+      "mode": "arg",
+      "flag": "-enable_debug_info"
+    }
+  },
+  "params": [
+    {
+      "id": "stitch_type",
+      "type": "enum",
+      "values": [
+        "optflow",
+        "template",
+        "dynamicstitch",
+        "aistitch"
+      ],
+      "default": "optflow",
+      "label": "拼接算法",
+      "description": "optflow: 光流拼接（默认，质量最好）；template: 模板拼接（最快）；dynamicstitch: 动态拼接；aistitch: AI 拼接",
+      "inject": {
+        "mode": "arg",
+        "flag": "-stitch_type"
+      }
+    },
+    {
+      "id": "output_size",
+      "type": "string",
+      "default": "3840x1920",
+      "label": "输出分辨率",
+      "description": "格式 宽x高，如 3840x1920",
+      "inject": {
+        "mode": "arg",
+        "flag": "-output_size"
+      }
+    },
+    {
+      "id": "flowstate",
+      "type": "bool",
+      "default": false,
+      "label": "FlowState 防抖",
+      "inject": {
+        "mode": "arg",
+        "flag": "-enable_flowstate"
+      }
+    },
+    {
+      "id": "h265",
+      "type": "bool",
+      "default": false,
+      "label": "H265 编码",
+      "description": "关闭则使用 H264",
+      "inject": {
+        "mode": "arg",
+        "flag": "-enable_h265_encoder"
+      }
+    },
+    {
+      "id": "colorplus",
+      "type": "bool",
+      "default": false,
+      "label": "ColorPlus 色彩增强",
+      "inject": {
+        "mode": "arg",
+        "flag": "-enable_colorplus"
+      }
+    },
+    {
+      "id": "denoise",
+      "type": "bool",
+      "default": false,
+      "label": "降噪",
+      "inject": {
+        "mode": "arg",
+        "flag": "-enable_denoise"
+      }
+    },
+    {
+      "id": "deflicker",
+      "type": "bool",
+      "default": false,
+      "label": "去闪烁",
+      "inject": {
+        "mode": "arg",
+        "flag": "-enable_deflicker"
+      }
+    },
+    {
+      "id": "defringe",
+      "type": "bool",
+      "default": false,
+      "label": "去紫边",
+      "inject": {
+        "mode": "arg",
+        "flag": "-enable_defringe"
+      }
+    },
+    {
+      "id": "verbose",
+      "type": "bool",
+      "default": false,
+      "label": "详细日志",
+      "inject": {
+        "mode": "arg",
+        "flag": "-enable_debug_info"
+      }
+    }
+  ],
+  "command": "MediaSDKTest -inputs {in:insv} -output {out:panorama} -model_root_dir /usr/models -stitch_type {param:stitch_type} -output_size {param:output_size} {param:flowstate} {param:h265} {param:colorplus} {param:denoise} {param:deflicker} {param:defringe} {param:verbose}"
+}

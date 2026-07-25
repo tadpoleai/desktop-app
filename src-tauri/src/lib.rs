@@ -24,7 +24,13 @@ pub fn run() {
             let workspace_root = resolve_workspace_root();
             std::env::set_current_dir(&workspace_root).ok();
 
-            let resource_dir = app.path().resource_dir().ok();
+            // In dev builds, `resource_dir()` can resolve to a stale copy that tauri-build
+            // snapshotted into target/debug/{workflows,operators} on a previous compile —
+            // it isn't re-synced when files are added/edited under the source workflows/
+            // and operators/ dirs, so it silently shadows live edits. Debug builds always
+            // have the real source tree available (workspace_root), so skip resource_dir
+            // entirely there; only packaged release builds need it.
+            let resource_dir = if cfg!(debug_assertions) { None } else { app.path().resource_dir().ok() };
 
             // Prefer bundled resource_dir/workflows (production .deb/.AppImage/.exe),
             // fall back to workspace_root/workflows (dev / HERA_WORKSPACE).

@@ -166,7 +166,16 @@ async fn run_workflow_inner(
         // Apply config patches before running
         ctx.apply_config_patches()?;
 
-        let env = ctx.env_vars();
+        let mut env = ctx.env_vars();
+        // Pass OSS credentials through from the host process environment (never from
+        // a config file or operator manifest) for operators that upload/download via
+        // OSS — e.g. panorama-stitch's FC client for recordings too large for a
+        // direct HTTP body. No-op for operators that don't read these.
+        for key in ["OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET", "OSS_BUCKET", "OSS_ENDPOINT"] {
+            if let Ok(val) = std::env::var(key) {
+                env.insert(key.to_string(), val);
+            }
+        }
         let command = ctx.expand_command()?;
 
         // Build mount list
