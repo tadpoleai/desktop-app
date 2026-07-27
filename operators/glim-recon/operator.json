@@ -2,8 +2,8 @@
   "spec": "1",
   "id": "glim-recon",
   "name": "GLIM 激光重建",
-  "version": "r0.7",
-  "image": "hera-glim-recon:r0.7",
+  "version": "r0.22",
+  "image": "crpi-wzvoh0tsm7bwb22w.cn-shanghai.personal.cr.aliyuncs.com/glim/glim-runner:r0.22",
   "gpu": "optional",
   "mounts": [
     {
