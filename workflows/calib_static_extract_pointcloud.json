@@ -1,0 +1,19 @@
+{
+  "id": "calib_static_extract_pointcloud",
+  "name": "标定：静止场景点云提取（跳过重建）",
+  "description": "输入 .hera 会话文件，直接导出 Mid-360 原始点云（LiDAR 自身坐标系当世界系，平移/旋转为单位阵），不跑 GLIM 重建。用于标定工具的静止场景默认分支。",
+  "input": {
+    "type": "file",
+    "ext": [".hera"],
+    "label": "输入 .hera 会话文件"
+  },
+  "nodes": [
+    {
+      "id": "step_extract",
+      "operator": "storage-extract-mid360",
+      "params": {}
+    }
+  ],
+  "edges": [],
+  "workflow_input_to": { "node": "step_extract", "input": "scan" }
+}

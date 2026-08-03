@@ -13,3 +13,5 @@ hera-output/
 .DS_Store
 *.bak
 design/*.zip
+operators/storage-extract-mid360/bin/
+operators/sensor-time-sync/bin/

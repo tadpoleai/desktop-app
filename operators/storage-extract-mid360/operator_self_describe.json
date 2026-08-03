@@ -1,0 +1,21 @@
+{
+  "spec": "1",
+  "id": "storage-extract-mid360",
+  "name": "Mid-360 点云提取",
+  "version": "0.1",
+  "image": "hera-storage-extract-mid360:local",
+  "gpu": "none",
+  "mounts": [],
+  "inputs": [
+    { "id": "scan", "type": "file", "ext": [".hera"], "container": "/data/input" }
+  ],
+  "outputs": [
+    { "id": "points", "type": "file", "container": "/output/points.csv" }
+  ],
+  "params_schema": {
+    "type": "object",
+    "properties": {}
+  },
+  "params_bindings": {},
+  "command": "hera-storage-extract-mid360 {in:scan} --points {out:points}"
+}

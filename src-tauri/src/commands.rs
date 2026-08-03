@@ -247,15 +247,33 @@ pub async fn run_workflow(
     Ok(job_id)
 }
 
+/// Aborting the Rust task alone does not stop the container it was waiting on
+/// (`tokio::process::Command` here has no `kill_on_drop`) — without also
+/// `docker stop`-ing it by name (`hera-<job_id>-<step_id>`, see `dag.rs`), a
+/// cancelled step's container keeps running orphaned. Runs the stop best-effort
+/// and doesn't fail the command if none are found, since by the time the user
+/// clicks cancel the container may have already exited on its own.
 #[tauri::command]
 pub fn cancel_job(job_id: String, state: State<AppState>) -> Result<(), String> {
-    let mut jobs = state.active_jobs.lock().unwrap();
-    if let Some(handle) = jobs.remove(&job_id) {
+    let handle = state.active_jobs.lock().unwrap().remove(&job_id);
+    if let Some(handle) = handle {
         handle.abort();
-        Ok(())
-    } else {
-        Err(format!("job not found: {}", job_id))
     }
+
+    let container_bin = state.config.lock().unwrap().runtime.container.clone();
+    let prefix = format!("hera-{}-", job_id);
+    if let Ok(out) = std::process::Command::new(&container_bin)
+        .args(["ps", "-q", "--filter", &format!("name={}", prefix)])
+        .output()
+    {
+        for id in String::from_utf8_lossy(&out.stdout).lines() {
+            let id = id.trim();
+            if !id.is_empty() {
+                let _ = std::process::Command::new(&container_bin).args(["stop", id]).output();
+            }
+        }
+    }
+    Ok(())
 }
 
 // ── Job history ───────────────────────────────────────────────────────────────
@@ -362,6 +380,326 @@ pub fn hera_file_info(path: String) -> Result<serde_json::Value, String> {
     }))
 }
 
+/// Extract the IMU stream via the host `hera-storage-extract-mid360` binary and
+/// judge static vs. motion from per-axis gyro std (see `hera_runner::motion` for
+/// why magnitude alone is not a valid test). This is only a suggestion — the UI
+/// must still let the user override it, never auto-branch without confirmation.
+#[tauri::command]
+pub fn check_session_motion(
+    hera_path: String,
+    threshold: Option<f64>,
+    state: State<AppState>,
+) -> Result<hera_runner::MotionCheckResult, String> {
+    let p = PathBuf::from(&hera_path);
+    if !p.exists() {
+        return Err(format!("file not found: {}", hera_path));
+    }
+
+    let tool_path = {
+        let cfg = state.config.lock().unwrap();
+        cfg.data.storage_extract_mid360_path.clone()
+    }
+    .ok_or_else(|| "未配置 hera-storage-extract-mid360 路径，请在设置 → 外部工具中填写".to_string())?;
+    let tool_path = PathBuf::from(tool_path);
+    if !tool_path.is_file() {
+        return Err(format!(
+            "hera-storage-extract-mid360 未找到：{}",
+            tool_path.display()
+        ));
+    }
+
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("session");
+    let out_csv = std::env::temp_dir().join(format!(
+        "hera-calib-{}-{}.imu.csv",
+        stem,
+        uuid::Uuid::new_v4()
+    ));
+
+    hera_runner::extract_imu_csv(&tool_path, &p, &out_csv).map_err(|e| e.to_string())?;
+    let result = hera_runner::check_motion(
+        &out_csv,
+        threshold.unwrap_or(hera_runner::DEFAULT_REST_STD_THRESHOLD),
+    );
+    let _ = std::fs::remove_file(&out_csv);
+    result.map_err(|e| e.to_string())
+}
+
+/// Bins a point cloud (.csv from storage-extract-mid360, or .ply from
+/// glim-export-pcd) into an azimuth/elevation range image for the right-hand
+/// selection panel — see `hera_runner::rangeimage` for the binning math and why
+/// magnitude/nearest-point-per-bin was chosen. Recomputed on demand rather than
+/// cached: it only runs once per session when the user opens the point-select
+/// stage, not on every interaction.
+#[tauri::command]
+pub fn build_range_image(
+    pointcloud_path: String,
+    az_bins: u32,
+    el_bins: u32,
+    invert_elevation: bool,
+    frame_pose: Option<hera_runner::Pose>,
+) -> Result<hera_runner::RangeImageResult, String> {
+    let p = PathBuf::from(&pointcloud_path);
+    if !p.exists() {
+        return Err(format!("file not found: {}", pointcloud_path));
+    }
+    let mut points = hera_runner::load_points_xyz(&p).map_err(|e| e.to_string())?;
+    // Motion scene (§7): re-express the aggregated GLIM-world-frame map as "what
+    // the LiDAR saw" at the scrubbed timeline pose, so the same binning code
+    // works for both static (frame_pose=None, points already LiDAR-frame) and
+    // motion (frame_pose=Some, points are world-frame) point clouds.
+    if let Some(pose) = frame_pose {
+        points = hera_runner::world_to_frame(&points, &pose);
+    }
+    hera_runner::build_range_image(&points, az_bins, el_bins, invert_elevation).map_err(|e| e.to_string())
+}
+
+/// Right-panel "raw single-frame" source (as opposed to the GLIM aggregated
+/// map): a time-windowed slice straight out of the un-reconstructed
+/// `storage-extract-mid360 --points` CSV — no SLAM aggregation, so no
+/// whole-session drift/noise, but only whatever the LiDAR actually captured in
+/// that narrow window (sparser). See `hera_runner::rangeimage::load_csv_xyz_windowed`.
+#[tauri::command]
+pub fn build_range_image_windowed(
+    raw_points_path: String,
+    t_center_sec: f64,
+    window_sec: f64,
+    az_bins: u32,
+    el_bins: u32,
+    invert_elevation: bool,
+) -> Result<hera_runner::RangeImageResult, String> {
+    let p = PathBuf::from(&raw_points_path);
+    if !p.exists() {
+        return Err(format!("file not found: {}", raw_points_path));
+    }
+    let points = hera_runner::load_csv_xyz_windowed(&p, t_center_sec, window_sec).map_err(|e| e.to_string())?;
+    hera_runner::build_range_image(&points, az_bins, el_bins, invert_elevation).map_err(|e| e.to_string())
+}
+
+/// GLIM-map "time-windowed" source: instead of reprojecting the *whole
+/// session's* aggregated map (`glim-export-pcd`'s map_export.ply) into "LiDAR
+/// frame at time t" — which mixes in points captured from other
+/// viewpoints/times and reads as cluttered/ghosted for a moving scene — loads
+/// only the GLIM submaps whose own frame timestamps overlap the window. See
+/// `hera_runner::submap` for the (reverse-engineered, no upstream spec)
+/// per-submap file format this depends on.
+#[tauri::command]
+pub fn build_range_image_glim_windowed(
+    map_dir: String,
+    t_center_sec: f64,
+    window_sec: f64,
+    frame_pose: hera_runner::Pose,
+    az_bins: u32,
+    el_bins: u32,
+    invert_elevation: bool,
+) -> Result<hera_runner::RangeImageResult, String> {
+    let p = PathBuf::from(&map_dir);
+    if !p.exists() {
+        return Err(format!("map directory not found: {}", map_dir));
+    }
+    let points = hera_runner::load_glim_points_windowed(&p, t_center_sec, window_sec).map_err(|e| e.to_string())?;
+    let points = hera_runner::world_to_frame(&points, &frame_pose);
+    hera_runner::build_range_image(&points, az_bins, el_bins, invert_elevation).map_err(|e| e.to_string())
+}
+
+/// First Mid360 sample's `timestamp_host_ns` from a raw
+/// `storage-extract-mid360 --points` CSV — the zero-anchor
+/// `multi_source_synchronizer` used for its Mid360 axis (see that operator's
+/// output `offset_sec`), needed to convert `traj_lidar.txt`'s host-clock
+/// timeline position into Insta360 video-relative time. See
+/// `hera_runner::rangeimage::first_row_timestamp_host_ns`.
+#[tauri::command]
+pub fn first_timestamp_host_ns(raw_points_path: String) -> Result<u64, String> {
+    let p = PathBuf::from(&raw_points_path);
+    if !p.exists() {
+        return Err(format!("file not found: {}", raw_points_path));
+    }
+    hera_runner::first_row_timestamp_host_ns(&p).map_err(|e| e.to_string())
+}
+
+/// Loads `<map_dir>/traj_lidar.txt` (GLIM's own loop-closed trajectory output —
+/// see `hera_runner::trajectory` doc for where this filename/format comes
+/// from) and reports its time range for the timeline control (§7).
+#[tauri::command]
+pub fn load_trajectory(path: String) -> Result<hera_runner::TrajectoryInfo, String> {
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("file not found: {}", path));
+    }
+    let traj = hera_runner::load_trajectory(&p).map_err(|e| e.to_string())?;
+    Ok(hera_runner::trajectory_info(&traj))
+}
+
+/// Interpolates the LiDAR pose at `t_query` (seconds, same units as
+/// `traj_lidar.txt`) — `Ok(None)` if outside the trajectory's time range,
+/// not an error (the UI clamps the slider to the loaded range so this should
+/// only happen from a stale/racy call, not normal use).
+#[tauri::command]
+pub fn interpolate_pose(path: String, t_query: f64) -> Result<Option<hera_runner::Pose>, String> {
+    let p = PathBuf::from(&path);
+    if !p.exists() {
+        return Err(format!("file not found: {}", path));
+    }
+    let traj = hera_runner::load_trajectory(&p).map_err(|e| e.to_string())?;
+    Ok(hera_runner::interpolate_pose(&traj, t_query))
+}
+
+/// Read an arbitrary file (the stitched panorama frame) and return it
+/// base64-encoded, so the frontend can build a `data:` URL for `<canvas>` without
+/// needing the Tauri asset-protocol scope opened up for dynamic hera-output paths.
+#[tauri::command]
+pub fn read_file_base64(path: String) -> Result<String, String> {
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
+}
+
+/// Read a small text file (used to seed the param panel from an existing
+/// `<stem>.extrinsic.json` if one already exists for this session — task doc
+/// §3: "初值:读 extrinsic.json 当前值,不是从零开始搜"). `Ok(None)` when the
+/// file doesn't exist yet (first calibration for this session), not an error.
+#[tauri::command]
+pub fn read_text_file_opt(path: String) -> Result<Option<String>, String> {
+    match std::fs::read_to_string(&path) {
+        Ok(s) => Ok(Some(s)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Refine a candidate extrinsic from ≥3 ERP-pixel/3D-point pairs — see
+/// `hera_runner::calib` for the math and the exact rotation convention (matched
+/// to the existing `spatial-memory` extrinsic.json / p3_bind_pose.py, NOT this
+/// repo's own `injector.rs` mounting_rpy convention, which is unrelated). This
+/// only ever returns a *candidate* — the caller must still generate an overlay
+/// preview and let the user confirm before `save_extrinsic` (task doc §0: no
+/// auto-write without a human looking at it first).
+#[tauri::command]
+pub fn solve_extrinsic(
+    frames: Vec<hera_runner::FrameGroup>,
+    initial_extrinsic: hera_runner::Extrinsic,
+    erp_width: f64,
+    erp_height: f64,
+) -> Result<hera_runner::SolveResult, String> {
+    hera_runner::solve_extrinsic(&frames, initial_extrinsic, erp_width, erp_height)
+        .map_err(|e| e.to_string())
+}
+
+/// Projects the point cloud through `extrinsic` onto the panorama frame for
+/// visual confirmation. Returns base64 JPEG (same "no asset-protocol scope"
+/// reasoning as `read_file_base64`).
+#[tauri::command]
+pub fn project_overlay(
+    pointcloud_path: String,
+    extrinsic: hera_runner::Extrinsic,
+    panorama_path: String,
+    subsample: usize,
+    frame_pose: Option<hera_runner::Pose>,
+) -> Result<String, String> {
+    let pc_path = PathBuf::from(&pointcloud_path);
+    if !pc_path.exists() {
+        return Err(format!("file not found: {}", pointcloud_path));
+    }
+    let pano_path = PathBuf::from(&panorama_path);
+    if !pano_path.exists() {
+        return Err(format!("file not found: {}", panorama_path));
+    }
+
+    let mut points = hera_runner::load_points_xyz(&pc_path).map_err(|e| e.to_string())?;
+    // Same reasoning as build_range_image: a motion-session point cloud is in
+    // GLIM's world frame, not the LiDAR's own frame, so the calib math (which
+    // assumes P is LiDAR-frame) needs it re-expressed at the pose the LiDAR
+    // actually had when the (fixed, non-timeline-linked) panorama frame was
+    // captured — otherwise the overlay is wrong even with a correct extrinsic.
+    if let Some(pose) = frame_pose {
+        points = hera_runner::world_to_frame(&points, &pose);
+    }
+    let base = image::open(&pano_path).map_err(|e| e.to_string())?.to_rgb8();
+    let overlay = hera_runner::project_overlay(&points, extrinsic, &base, subsample.max(1));
+
+    let mut jpeg_bytes = Vec::new();
+    {
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_bytes, 85);
+        encoder
+            .encode(overlay.as_raw(), overlay.width(), overlay.height(), image::ExtendedColorType::Rgb8)
+            .map_err(|e| e.to_string())?;
+    }
+    use base64::Engine;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&jpeg_bytes))
+}
+
+/// Writes `<session_dir>/<stem>.extrinsic.json` — schema extends (never
+/// replaces field names of) the existing `work/phase3/extrinsic.json` shape
+/// from the spatial-memory project (task doc §6). Appends to `iteration_log`
+/// rather than clobbering it if a prior save already exists at this path, so
+/// re-solving/re-saving the same session keeps its history.
+#[tauri::command]
+pub fn save_extrinsic(
+    session_path: String,
+    extrinsic: hera_runner::Extrinsic,
+    point_pairs: Vec<hera_runner::PointPair>,
+    residuals_deg: Vec<f64>,
+    note: Option<String>,
+) -> Result<String, String> {
+    let p = PathBuf::from(&session_path);
+    let stem = p
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("session")
+        .to_string();
+    let dir = p.parent().unwrap_or_else(|| Path::new("."));
+    let out_path = dir.join(format!("{}.extrinsic.json", stem));
+
+    let existing: serde_json::Value = std::fs::read_to_string(&out_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+
+    let mut iteration_log: Vec<serde_json::Value> = existing
+        .get("iteration_log")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let iteration_count = iteration_log.len() as u64 + 1;
+
+    let rms = if residuals_deg.is_empty() {
+        0.0
+    } else {
+        (residuals_deg.iter().map(|d| d * d).sum::<f64>() / residuals_deg.len() as f64).sqrt()
+    };
+    let note_suffix = note.as_deref().map(|n| format!(" — {}", n)).unwrap_or_default();
+    iteration_log.push(serde_json::Value::String(format!(
+        "iteration {}: calibration-tool solved from {} point pairs, rms residual {:.3} deg{}",
+        iteration_count,
+        point_pairs.len(),
+        rms,
+        note_suffix
+    )));
+
+    let known_caveats: Vec<serde_json::Value> = existing
+        .get("known_caveats")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let out = serde_json::json!({
+        "translation_lidar_to_camera_m": [extrinsic.tx, extrinsic.ty, extrinsic.tz],
+        "rotation_lidar_to_camera_euler_xyz_deg": [extrinsic.roll_deg, extrinsic.pitch_deg, extrinsic.yaw_deg],
+        "iteration_count": iteration_count,
+        "iteration_log": iteration_log,
+        "known_caveats": known_caveats,
+        "status": "calibration-tool_confirmed",
+        "calibrated_by": "calibration-tool",
+        "point_pairs_used": point_pairs.len(),
+        "residuals_deg": residuals_deg,
+        "source_session": stem,
+        "motion_state": "static",
+    });
+
+    let pretty = serde_json::to_string_pretty(&out).map_err(|e| e.to_string())?;
+    std::fs::write(&out_path, pretty).map_err(|e| e.to_string())?;
+    Ok(out_path.to_string_lossy().to_string())
+}
+
 // ── File system ───────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -447,6 +785,8 @@ pub fn get_config(state: State<AppState>) -> Result<AppConfig, String> {
 
 #[tauri::command]
 pub fn set_config(config: AppConfig, state: State<AppState>) -> Result<(), String> {
+    let toml_str = toml::to_string_pretty(&config).map_err(|e| e.to_string())?;
+    std::fs::write(&state.config_path, toml_str).map_err(|e| e.to_string())?;
     *state.config.lock().unwrap() = config;
     Ok(())
 }

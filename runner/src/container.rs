@@ -38,11 +38,19 @@ impl ContainerRuntime {
         mounts: &[MountArg],
         env_vars: &HashMap<String, String>,
         command: &str,
+        name: &str,
     ) -> anyhow::Result<(i32, mpsc::Receiver<LogLine>)> {
         let uid = get_current_uid();
         let gid = get_current_gid();
 
-        let mut args: Vec<String> = vec!["run".into(), "--rm".into()];
+        // Named so `cancel_job` can `docker stop` it directly — aborting the Rust
+        // task alone (tokio::process::Command has no kill_on_drop here) leaves the
+        // container running orphaned in the background. Bit us in practice: a
+        // GPU-required step started with no GPU present deadlocks in the image's
+        // own process (MediaSDK blocks in futex_wait on CUDA init) rather than
+        // exiting, so without a name to target, the only way out was `docker ps` +
+        // manual `docker stop` from a shell.
+        let mut args: Vec<String> = vec!["run".into(), "--rm".into(), "--name".into(), name.into()];
 
         // Run as root inside the container; we chown output in the wrapped command below.
         // Cannot use --user here because GLIM's entrypoint sources /root/ros2_ws/... (root-only).

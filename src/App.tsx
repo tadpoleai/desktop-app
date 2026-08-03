@@ -11,8 +11,9 @@ import { TaskView } from "./views/TaskView";
 import { SettingsView } from "./views/SettingsView";
 import { OperatorsView } from "./views/OperatorsView";
 import { MemoryView } from "./views/MemoryView";
+import { CalibrationView } from "./views/CalibrationView";
 
-type ViewId = "data" | "run" | "tasks" | "memory" | "operators" | "settings";
+type ViewId = "data" | "run" | "tasks" | "memory" | "operators" | "calibration" | "settings";
 type LogLine = { text: string; cls: string };
 
 // Captures antd message API into module-level ref for use anywhere via toast.*
@@ -29,6 +30,7 @@ const CRUMB_LABELS: Record<ViewId, string> = {
   tasks:     "任务历史",
   memory:    "空间记忆库",
   operators: "算子仓库",
+  calibration: "激光-全景相机标定",
   settings:  "首选项",
 };
 
@@ -38,6 +40,7 @@ const VIEW_LABELS: Record<ViewId, string> = {
   tasks:     "任务",
   memory:    "记忆",
   operators: "算子",
+  calibration: "标定",
   settings:  "设置",
 };
 
@@ -190,6 +193,13 @@ export function App() {
                 <path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>
               </svg>
             </ModeBtn>
+            <ModeBtn id="calibration" label="标定"  active={view==="calibration"} onClick={() => setView("calibration")} accent="#0891b2">
+              <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>
+                <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+              </svg>
+            </ModeBtn>
             <ModeBtn id="settings"  label="设置"    active={view==="settings"}  onClick={() => setView("settings")}>
               <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <circle cx="12" cy="12" r="3"/>
@@ -255,6 +265,12 @@ export function App() {
               {view === "tasks"     && <TaskView />}
               {view === "memory"    && <MemoryView />}
               {view === "operators" && <OperatorsView />}
+              {view === "calibration" && (
+                <CalibrationView
+                  currentSession={currentSession}
+                  onRequestSession={() => setView("data")}
+                />
+              )}
               {view === "settings"  && <SettingsView onConfigSaved={setConfig} />}
               </ErrorBoundary>
             </div>

@@ -1,0 +1,36 @@
+{
+  "spec": "1",
+  "id": "insv-trim",
+  "name": "全景视频裁剪",
+  "version": "0.1",
+  "image": "hera-insv-trim:local",
+  "gpu": "none",
+  "mounts": [],
+  "inputs": [
+    { "id": "insv", "type": "file", "ext": [".insv"], "container": "/data/input" }
+  ],
+  "outputs": [
+    { "id": "trimmed", "type": "file", "container": "/output/trimmed.insv" }
+  ],
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "start_s": {
+        "type": "number",
+        "default": 0,
+        "title": "起始时间(秒)"
+      },
+      "duration_s": {
+        "type": "number",
+        "default": 999999,
+        "title": "时长(秒)",
+        "description": "留很大的值(默认)即裁剪整段，不做任何截取；只在需要限定时间段拼接时调小"
+      }
+    }
+  },
+  "params_bindings": {
+    "start_s": { "mode": "arg", "flag": "-ss" },
+    "duration_s": { "mode": "arg", "flag": "-t" }
+  },
+  "command": "ffmpeg -y -ss {param:start_s} -i {in:insv} -t {param:duration_s} -c copy -map 0 -f mp4 {out:trimmed}"
+}

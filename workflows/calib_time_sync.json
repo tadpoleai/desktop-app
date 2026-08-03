@@ -1,0 +1,19 @@
+{
+  "id": "calib_time_sync",
+  "name": "标定：传感器时间同步检测",
+  "description": "输入 .hera 会话文件，用 multi_source_synchronizer 基于两路 IMU 陀螺仪互相关，估计 Mid-360 与 Insta360 的时钟偏移 offset_sec（t_mid = t_insta + offset_sec）。需要录制开始的 ~60 秒内有明显的头部/机身随机晃动（同步标定运动），否则可能对齐失败——失败是正常的数据质量反馈，不是工具故障。",
+  "input": {
+    "type": "file",
+    "ext": [".hera"],
+    "label": "输入 .hera 会话文件"
+  },
+  "nodes": [
+    {
+      "id": "step_sync",
+      "operator": "sensor-time-sync",
+      "params": {}
+    }
+  ],
+  "edges": [],
+  "workflow_input_to": { "node": "step_sync", "input": "scan" }
+}

@@ -63,6 +63,7 @@ pub fn run() {
 
             app.manage(state::AppState {
                 config: std::sync::Mutex::new(cfg),
+                config_path,
                 operators_dir,
                 workflows_dir,
                 registry: std::sync::Mutex::new(registry),
@@ -91,6 +92,18 @@ pub fn run() {
             commands::job_provenance,
             commands::open_hera_session,
             commands::hera_file_info,
+            commands::check_session_motion,
+            commands::build_range_image,
+            commands::build_range_image_windowed,
+            commands::build_range_image_glim_windowed,
+            commands::first_timestamp_host_ns,
+            commands::read_file_base64,
+            commands::read_text_file_opt,
+            commands::solve_extrinsic,
+            commands::project_overlay,
+            commands::save_extrinsic,
+            commands::load_trajectory,
+            commands::interpolate_pose,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
