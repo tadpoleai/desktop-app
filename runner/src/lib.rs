@@ -8,7 +8,17 @@ pub mod config;
 pub mod hera_format;
 pub mod docker_diag;
 pub mod gpu;
+pub mod motion;
+pub mod rangeimage;
+pub mod calib;
+pub mod trajectory;
+pub mod submap;
 
 pub use dag::{extract_config_from_image, JobRunner, JobEvent};
 pub use manifest::{Operator, Param};
 pub use workflow::Workflow;
+pub use motion::{check_motion, extract_imu_csv, MotionCheckResult, DEFAULT_REST_STD_THRESHOLD};
+pub use rangeimage::{build_range_image, first_row_timestamp_host_ns, load_csv_xyz_windowed, load_points_xyz, RangeImageResult};
+pub use calib::{solve_extrinsic, project_overlay, Extrinsic, FrameGroup, PointPair, SolveResult};
+pub use trajectory::{interpolate_pose, load_trajectory, trajectory_info, world_to_frame, Pose, TrajectoryInfo};
+pub use submap::load_glim_points_windowed;

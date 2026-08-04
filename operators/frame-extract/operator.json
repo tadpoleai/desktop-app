@@ -1,0 +1,30 @@
+{
+  "spec": "1",
+  "id": "frame-extract",
+  "name": "视频抽帧",
+  "version": "0.1",
+  "image": "hera-frame-extract:local",
+  "gpu": "none",
+  "mounts": [],
+  "inputs": [
+    { "id": "video", "type": "file", "ext": [".mp4"], "container": "/data/input" }
+  ],
+  "outputs": [
+    { "id": "frame", "type": "file", "container": "/output/frame.jpg" }
+  ],
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "timestamp_s": {
+        "type": "number",
+        "default": 0,
+        "title": "抽帧时间点(秒)",
+        "description": "静止场景(flowstate=false)整段视频画面基本不变，默认取第 0 秒"
+      }
+    }
+  },
+  "params_bindings": {
+    "timestamp_s": { "mode": "arg", "flag": "-ss" }
+  },
+  "command": "ffmpeg -y -ss {param:timestamp_s} -i {in:video} -frames:v 1 -q:v 2 {out:frame}"
+}

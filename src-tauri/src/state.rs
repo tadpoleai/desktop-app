@@ -5,6 +5,7 @@ use tokio::task::JoinHandle;
 
 pub struct AppState {
     pub config: Mutex<hera_runner::config::AppConfig>,
+    pub config_path: PathBuf,
     pub operators_dir: PathBuf,
     pub workflows_dir: PathBuf,
     pub registry: Mutex<hera_runner::registry::Registry>,

@@ -1,0 +1,41 @@
+{
+  "id": "calib_panorama_frame",
+  "name": "标定：全景拼接+抽帧",
+  "description": "输入 .insv 双鱼眼视频（与 .hera 同目录同名），本机 GPU 拼接为全景视频后抽取一帧静止图，供标定工具左侧 ERP 面板选点使用。stitch_type/flowstate 固定复用既有 panorama_stitch_gpu 配置，不在 UI 暴露。曾经尝试过接一个 ffmpeg 无损裁剪步骤支持限定时间段拼接，但实测 MediaSDKTest 需要原始 .insv 里的镜头标定元数据，任何 ffmpeg -c copy 重新封装（哪怕不裁剪、只是重新写一遍容器）都会丢失这份数据，报错 \"The number of lens obtained does not meet the stitching requirements\"——已经改回直接喂原始文件，不要再引入裁剪/重新封装步骤，除非先搞清楚怎么保留这份专有元数据。",
+  "input": {
+    "type": "file",
+    "ext": [".insv"],
+    "label": "输入 .insv 文件（与 .hera 同目录同名）"
+  },
+  "nodes": [
+    {
+      "id": "step_stitch",
+      "operator": "panorama-stitch-gpu",
+      "params": {
+        "stitch_type": "optflow",
+        "output_size": "3840x1920",
+        "flowstate": false,
+        "h265": false,
+        "colorplus": false,
+        "denoise": false,
+        "deflicker": false,
+        "defringe": false,
+        "verbose": false
+      }
+    },
+    {
+      "id": "step_frame",
+      "operator": "frame-extract",
+      "params": { "timestamp_s": 0 }
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "step_stitch",
+      "from_output": "panorama",
+      "to_node": "step_frame",
+      "to_input": "video"
+    }
+  ],
+  "workflow_input_to": { "node": "step_stitch", "input": "insv" }
+}

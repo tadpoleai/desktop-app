@@ -1,0 +1,19 @@
+{
+  "id": "calib_frame_extract",
+  "name": "标定：重新抽帧（复用已拼接结果）",
+  "description": "输入一段已经拼接好的全景 panorama.mp4，重新抽取指定时间点的一帧，不重新跑 GPU 拼接。用于第一次拼接完成后，想换个时间点的帧而不必再等一次拼接。",
+  "input": {
+    "type": "file",
+    "ext": [".mp4"],
+    "label": "已拼接的 panorama.mp4"
+  },
+  "nodes": [
+    {
+      "id": "step_frame",
+      "operator": "frame-extract",
+      "params": { "timestamp_s": 0 }
+    }
+  ],
+  "edges": [],
+  "workflow_input_to": { "node": "step_frame", "input": "video" }
+}

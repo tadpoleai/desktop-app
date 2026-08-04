@@ -1,0 +1,44 @@
+{
+  "spec": "1",
+  "id": "sensor-time-sync",
+  "name": "传感器时间同步（Mid360↔Insta360）",
+  "version": "0.1",
+  "image": "hera-sensor-time-sync:local",
+  "gpu": "none",
+  "mounts": [],
+  "inputs": [
+    { "id": "scan", "type": "file", "ext": [".hera"], "container": "/data/input" }
+  ],
+  "outputs": [
+    { "id": "offset", "type": "file", "container": "/output/sync_offset.txt" }
+  ],
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "min_out_bound_error_ratio": {
+        "type": "number",
+        "default": 0.15,
+        "title": "失配区间误差下限比例",
+        "description": "本项目的会话是两设备写入同一 .hera 的合并格式，固定用 0.15（旧的两设备独立开机双文件格式默认 0.2，不适用于本项目）"
+      },
+      "resample_rate": {
+        "type": "number",
+        "default": 100,
+        "title": "精搜索采样率 (Hz)",
+        "description": "100Hz → 量化误差 ±5ms（默认，步行场景够用）；500Hz → ±1ms，适合骑行等更快场景，综合精度约 ±10ms"
+      },
+      "max_diff_time": {
+        "type": "number",
+        "default": 5.0,
+        "title": "最大搜索偏移 (秒)",
+        "description": "两设备时钟偏移的搜索范围 ±N 秒，需满足：录制时长 > 3 × N"
+      }
+    }
+  },
+  "params_bindings": {
+    "min_out_bound_error_ratio": { "mode": "arg", "flag": "--MinOutBoundErrorRatio" },
+    "resample_rate": { "mode": "arg", "flag": "--ResampleRate" },
+    "max_diff_time": { "mode": "arg", "flag": "--MaxDiffTime" }
+  },
+  "command": "multi_source_synchronizer {in:scan} --MinOutBoundErrorRatio {param:min_out_bound_error_ratio} --ResampleRate {param:resample_rate} --MaxDiffTime {param:max_diff_time} --OutputOffset {out:offset}"
+}

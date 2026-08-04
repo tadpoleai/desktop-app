@@ -191,8 +191,9 @@ async fn run_workflow_inner(
         let needs_gpu = matches!(op.gpu, GpuMode::Required)
             || (matches!(op.gpu, GpuMode::Optional) && config.runtime.gpu_enabled);
 
+        let container_name = format!("hera-{}-{}", job_id, node.id);
         let (exit_code, mut log_rx) = runtime
-            .run(&op.image, needs_gpu, &mounts, &env, &command)
+            .run(&op.image, needs_gpu, &mounts, &env, &command, &container_name)
             .await?;
 
         let mut stderr_tail: Vec<String> = Vec::new();

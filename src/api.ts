@@ -143,9 +143,90 @@ export interface JobEvent {
 
 export interface AppConfig {
   runtime: { container: string; gpu_enabled: boolean };
-  data: { data_dir?: string; output_dir?: string; glim_config_dir?: string };
+  data: { data_dir?: string; output_dir?: string; glim_config_dir?: string; storage_extract_mid360_path?: string };
   viewers: { pointcloud_viewer?: string };
   registry: { db_path: string };
+}
+
+/** Static-vs-motion judgment for a session, from IMU gyro std. A suggestion only —
+ *  never auto-branch on `is_static` without letting the user confirm/override. */
+export interface MotionCheckResult {
+  gyro_std: [number, number, number];
+  window_std_max: number;
+  is_static: boolean;
+  threshold: number;
+  sample_count: number;
+  duration_s: number;
+}
+
+/** Azimuth/elevation range image built from a point cloud — right-hand panel of
+ *  the calibration point-select stage. `points` is row-major (row=elevation,
+ *  col=azimuth) x,y,z triplets in the cloud's own frame, NaN for empty bins. */
+export interface RangeImageResult {
+  az_bins: number;
+  el_bins: number;
+  image_png_base64: string;
+  /** Empty bins serialize as `null` (serde_json turns NaN into JSON null), not NaN. */
+  points: (number | null)[];
+  min_range: number;
+  max_range: number;
+  range_p02: number;
+  range_p50: number;
+  range_p98: number;
+  color_min_range: number;
+  color_max_range: number;
+  input_point_count: number;
+  valid_point_count: number;
+  filtered_point_count: number;
+  point_count: number;
+  occupancy_ratio: number;
+  /** Elevation range the image rows actually span — auto-fit to the point
+   *  cloud's own data (e.g. Mid-360's real ~-7..52deg FOV), not the full ±90°. */
+  el_min_deg: number;
+  el_max_deg: number;
+  source: "pointcloud" | "raw_time_window" | "glim_submaps" | "glim_whole_map" | "glim_whole_map_fallback";
+  source_detail?: string | null;
+}
+
+/** LiDAR->camera extrinsic (rotation convention: R = Rx(roll)·Ry(pitch)·Rz(yaw),
+ *  matched to the existing spatial-memory extrinsic.json / p3_bind_pose.py —
+ *  NOT the same convention as this app's own operator mounting_rpy params). */
+export interface Extrinsic {
+  tx: number; ty: number; tz: number;
+  roll_deg: number; pitch_deg: number; yaw_deg: number;
+}
+
+export interface CalibPointPair {
+  u: number; v: number;
+  x: number; y: number; z: number;
+  /** §7: fixed 0 for static scenes, scrubbed timeline position (ns) for motion. */
+  frame_timestamp_ns?: number | null;
+}
+
+/** LiDAR pose in the GLIM world/map frame at some trajectory timestamp. */
+export interface Pose {
+  pos: [number, number, number];
+  quat_xyzw: [number, number, number, number];
+}
+
+/** One timeline frame's point pairs + the LiDAR pose there (null for static). */
+export interface FrameGroup {
+  frame_pose: Pose | null;
+  pairs: CalibPointPair[];
+}
+
+export interface TrajectoryInfo {
+  t_min: number;
+  t_max: number;
+  count: number;
+}
+
+export interface SolveResult {
+  extrinsic: Extrinsic;
+  residuals_deg: number[];
+  iterations: number;
+  converged: boolean;
+  rms_residual_deg: number;
 }
 
 export interface OfficialOperator {
@@ -407,6 +488,31 @@ export const api = {
     return { ...raw, ...parseSessionFilename(raw.stem) };
   },
   heraFileInfo: (path: string) => invoke<HeraFileInfo>("hera_file_info", { path }),
+  checkSessionMotion: (heraPath: string, threshold?: number) =>
+    invoke<MotionCheckResult>("check_session_motion", { heraPath, threshold: threshold ?? null }),
+  buildRangeImage: (pointcloudPath: string, azBins: number, elBins: number, invertElevation: boolean, framePose?: Pose | null) =>
+    invoke<RangeImageResult>("build_range_image", { pointcloudPath, azBins, elBins, invertElevation, framePose: framePose ?? null }),
+  buildRangeImageWindowed: (rawPointsPath: string, tCenterSec: number, windowSec: number, azBins: number, elBins: number, invertElevation: boolean) =>
+    invoke<RangeImageResult>("build_range_image_windowed", { rawPointsPath, tCenterSec, windowSec, azBins, elBins, invertElevation }),
+  /** GLIM-map time-windowed source — only the submaps overlapping the window,
+   *  instead of reprojecting the whole session's aggregated map. See
+   *  hera_runner::submap for the underlying (reverse-engineered) format. */
+  buildRangeImageGlimWindowed: (mapDir: string, tCenterSec: number, windowSec: number, framePose: Pose, azBins: number, elBins: number, invertElevation: boolean) =>
+    invoke<RangeImageResult>("build_range_image_glim_windowed", { mapDir, tCenterSec, windowSec, framePose, azBins, elBins, invertElevation }),
+  /** First Mid360 sample's `timestamp_host_ns` from a raw points CSV — the
+   *  zero-anchor `multi_source_synchronizer`'s offset_sec is relative to. */
+  firstTimestampHostNs: (rawPointsPath: string) => invoke<number>("first_timestamp_host_ns", { rawPointsPath }),
+  loadTrajectory: (path: string) => invoke<TrajectoryInfo>("load_trajectory", { path }),
+  interpolatePose: (path: string, tQuery: number) => invoke<Pose | null>("interpolate_pose", { path, tQuery }),
+  readFileBase64: (path: string) => invoke<string>("read_file_base64", { path }),
+  readTextFileOpt: (path: string) => invoke<string | null>("read_text_file_opt", { path }),
+
+  solveExtrinsic: (frames: FrameGroup[], initialExtrinsic: Extrinsic, erpWidth: number, erpHeight: number) =>
+    invoke<SolveResult>("solve_extrinsic", { frames, initialExtrinsic, erpWidth, erpHeight }),
+  projectOverlay: (pointcloudPath: string, extrinsic: Extrinsic, panoramaPath: string, subsample: number, framePose?: Pose | null) =>
+    invoke<string>("project_overlay", { pointcloudPath, extrinsic, panoramaPath, subsample, framePose: framePose ?? null }),
+  saveExtrinsic: (sessionPath: string, extrinsic: Extrinsic, pointPairs: CalibPointPair[], residualsDeg: number[], note?: string) =>
+    invoke<string>("save_extrinsic", { sessionPath, extrinsic, pointPairs, residualsDeg, note: note ?? null }),
   listWorkflows: () => invoke<WorkflowSummary[]>("list_workflows"),
   getWorkflow: (id: string) => invoke<WorkflowDetail>("get_workflow", { id }),
   runWorkflow: (
@@ -417,6 +523,7 @@ export const api = {
   cancelJob: (jobId: string) => invoke<void>("cancel_job", { jobId }),
   listJobs: () => invoke<Job[]>("list_jobs"),
   jobArtifacts: (jobId: string) => invoke<Artifact[]>("job_artifacts", { jobId }),
+  findReusablePanorama: (inputPath: string) => invoke<Artifact[] | null>("find_reusable_panorama", { inputPath }),
   openPath: (path: string) => invoke<void>("open_path", { path }),
   getConfig: () => invoke<AppConfig>("get_config"),
   setConfig: (config: AppConfig) => invoke<void>("set_config", { config }),

@@ -28,6 +28,10 @@ pub struct DataConfig {
     pub glim_config_dir: Option<String>,
     /// Where to cache auto-extracted operator configs. Default: ~/.cache/hera
     pub config_cache_dir: Option<String>,
+    /// Path to the `hera-storage-extract-mid360` host binary (IMU/point cloud
+    /// extraction from `.hera` files). Not bundled with the app — user must
+    /// point at their build, e.g. `recorder/build_amd64/storage/hera-storage-extract-mid360`.
+    pub storage_extract_mid360_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]

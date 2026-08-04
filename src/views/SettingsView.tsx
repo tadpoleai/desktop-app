@@ -17,8 +17,10 @@ export function SettingsView({ onConfigSaved }: Props) {
     data_dir: "",
     glim_config_dir: "",
     pointcloud_viewer: "",
+    storage_extract_mid360_path: "",
   });
   const [toolCheck, setToolCheck] = React.useState<"unknown" | "ok" | "missing">("unknown");
+  const [storageToolCheck, setStorageToolCheck] = React.useState<"unknown" | "ok" | "missing">("unknown");
 
   React.useEffect(() => {
     const tool = vals.pointcloud_viewer.trim();
@@ -32,6 +34,17 @@ export function SettingsView({ onConfigSaved }: Props) {
   }, [vals.pointcloud_viewer]);
 
   React.useEffect(() => {
+    const tool = vals.storage_extract_mid360_path.trim();
+    if (!tool) { setStorageToolCheck("unknown"); return; }
+    const timer = setTimeout(() => {
+      api.resolveTool(tool)
+        .then((found) => setStorageToolCheck(found ? "ok" : "missing"))
+        .catch(() => setStorageToolCheck("missing"));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [vals.storage_extract_mid360_path]);
+
+  React.useEffect(() => {
     setLoading(true);
     api.getConfig()
       .then((cfg) => {
@@ -42,6 +55,7 @@ export function SettingsView({ onConfigSaved }: Props) {
           data_dir:         cfg.data?.data_dir ?? "",
           glim_config_dir:  cfg.data?.glim_config_dir ?? "",
           pointcloud_viewer: cfg.viewers?.pointcloud_viewer ?? "",
+          storage_extract_mid360_path: cfg.data?.storage_extract_mid360_path ?? "",
         });
       })
       .catch(() => {})
@@ -62,6 +76,11 @@ export function SettingsView({ onConfigSaved }: Props) {
     if (path) set("pointcloud_viewer", path);
   }
 
+  async function browseStorageTool() {
+    const path = await api.pickFile();
+    if (path) set("storage_extract_mid360_path", path);
+  }
+
   async function save() {
     const cfg: AppConfig = {
       runtime: { container: vals.container, gpu_enabled: vals.gpu_enabled },
@@ -69,6 +88,7 @@ export function SettingsView({ onConfigSaved }: Props) {
         output_dir:      vals.output_dir || undefined,
         data_dir:        vals.data_dir || undefined,
         glim_config_dir: vals.glim_config_dir || undefined,
+        storage_extract_mid360_path: vals.storage_extract_mid360_path || undefined,
       },
       viewers: { pointcloud_viewer: vals.pointcloud_viewer || undefined },
       registry: { db_path: "" },
@@ -209,6 +229,29 @@ export function SettingsView({ onConfigSaved }: Props) {
             {toolCheck === "missing" && (
               <div style={{ color: "#cf3a3f", fontSize: 11, marginTop: 5 }}>
                 未检测到该工具，请确认已安装并且路径正确
+              </div>
+            )}
+          </div>
+
+          <div className="hs-input-group" style={{ marginBottom: 16, maxWidth: 400 }}>
+            <label className="hs-input-label">
+              hera-storage-extract-mid360 <span style={{ color: "#b0b0b0" }}>— 标定工具用于导出 IMU/点云，未随本应用打包</span>
+            </label>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                className="hs-input mono"
+                style={{ flex: 1 }}
+                value={vals.storage_extract_mid360_path}
+                onChange={(e) => set("storage_extract_mid360_path", e.target.value)}
+                placeholder="/path/to/hera-storage-extract-mid360"
+              />
+              <button className="hs-btn" style={{ height: 28, flexShrink: 0 }} onClick={browseStorageTool}>
+                浏览…
+              </button>
+            </div>
+            {storageToolCheck === "missing" && (
+              <div style={{ color: "#cf3a3f", fontSize: 11, marginTop: 5 }}>
+                未检测到该工具，请确认路径正确
               </div>
             )}
           </div>
