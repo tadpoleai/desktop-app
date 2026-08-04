@@ -170,11 +170,22 @@ export interface RangeImageResult {
   points: (number | null)[];
   min_range: number;
   max_range: number;
+  range_p02: number;
+  range_p50: number;
+  range_p98: number;
+  color_min_range: number;
+  color_max_range: number;
+  input_point_count: number;
+  valid_point_count: number;
+  filtered_point_count: number;
   point_count: number;
+  occupancy_ratio: number;
   /** Elevation range the image rows actually span — auto-fit to the point
    *  cloud's own data (e.g. Mid-360's real ~-7..52deg FOV), not the full ±90°. */
   el_min_deg: number;
   el_max_deg: number;
+  source: "pointcloud" | "raw_time_window" | "glim_submaps" | "glim_whole_map" | "glim_whole_map_fallback";
+  source_detail?: string | null;
 }
 
 /** LiDAR->camera extrinsic (rotation convention: R = Rx(roll)·Ry(pitch)·Rz(yaw),
@@ -512,6 +523,7 @@ export const api = {
   cancelJob: (jobId: string) => invoke<void>("cancel_job", { jobId }),
   listJobs: () => invoke<Job[]>("list_jobs"),
   jobArtifacts: (jobId: string) => invoke<Artifact[]>("job_artifacts", { jobId }),
+  findReusablePanorama: (inputPath: string) => invoke<Artifact[] | null>("find_reusable_panorama", { inputPath }),
   openPath: (path: string) => invoke<void>("open_path", { path }),
   getConfig: () => invoke<AppConfig>("get_config"),
   setConfig: (config: AppConfig) => invoke<void>("set_config", { config }),

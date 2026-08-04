@@ -2,6 +2,7 @@ import React from "react";
 import { api, Artifact, CalibPointPair, Extrinsic, FrameGroup, JobEvent, Pose, RangeImageResult, SolveResult, TrajectoryInfo } from "../api";
 import { toast } from "../components/toast";
 import { PickCanvas, PickMarker } from "../components/PickCanvas";
+import { SphereViewer } from "../components/SphereViewer";
 
 interface Props {
   sessionPath: string;
@@ -62,6 +63,16 @@ interface Props {
 
 type PointcloudSource = "glim" | "raw";
 
+function rangeSourceLabel(source: RangeImageResult["source"]): string {
+  switch (source) {
+    case "raw_time_window": return "原始时间窗";
+    case "glim_submaps": return "GLIM 时间窗子图";
+    case "glim_whole_map_fallback": return "GLIM 整图（降级）";
+    case "glim_whole_map": return "GLIM 整图";
+    default: return "点云";
+  }
+}
+
 interface PointPair {
   seq: number;
   left?: { u: number; v: number };
@@ -82,6 +93,17 @@ const EL_BINS = 200;
 // resolution (subsample=1) since that's the one gating "保存".
 const LIVE_OVERLAY_SUBSAMPLE = 20;
 const ZERO_EXTRINSIC: Extrinsic = { tx: 0, ty: 0, tz: 0, roll_deg: 0, pitch_deg: 0, yaw_deg: 0 };
+// Mid-360 is a non-repetitive-scan LiDAR — coverage fills in over time, not a
+// single sweep, so a short window is inherently sparse. Empirically checked
+// against a real session: 0.2s only yields ~40k points against the depth
+// image's 720x200=144k bins (well under half, even with perfect angular
+// distribution — Mid-360's actual short-window coverage is less uniform than
+// that); 0.8s yields ~160k, already past the bin count. Trades a bit of
+// instantaneous accuracy (more scene motion can occur within the window) for
+// a depth image that isn't mostly empty.
+// Two Mid-360 sweeps are usually enough for a selectable image while keeping
+// vehicle/body motion smear far below the previous 0.8 s default. Operators
+// can still widen it for a sparse/low-reflectivity scene.
 const DEFAULT_WINDOW_SEC = 0.2;
 
 function extrinsicEqual(a: Extrinsic, b: Extrinsic): boolean {
@@ -90,6 +112,15 @@ function extrinsicEqual(a: Extrinsic, b: Extrinsic): boolean {
 
 export function CalibrationPointSelect({ sessionPath, panoramaFramePath, stitchedVideoPath, recordStartHostNs, syncOffsetSec, pointcloudPath, mapDirPath, rawPointcloudPath, motionState, trajectoryPath, onBack }: Props) {
   const [panoramaUrl, setPanoramaUrl] = React.useState<string | null>(null);
+  // Host path of whichever frame panoramaUrl is currently showing — starts at
+  // the original (fixed, t=0) stitch job's frame, updated by
+  // reextractLeftFrame whenever the timeline-follow re-extract lands a new
+  // one. generateOverlay must composite onto *this*, not the original
+  // panoramaFramePath prop — otherwise the overlay silently stays pinned to
+  // frame 0 forever regardless of where the timeline is, even though the
+  // left panel's own display correctly follows it (a real bug: the display
+  // and the overlay were reading two different frames).
+  const [currentPanoramaFramePath, setCurrentPanoramaFramePath] = React.useState<string | null>(panoramaFramePath);
   const [panoramaError, setPanoramaError] = React.useState<string | null>(null);
   const [followingTimeline, setFollowingTimeline] = React.useState(false);
   const [panoSize, setPanoSize] = React.useState<{ width: number; height: number } | null>(null);
@@ -160,9 +191,11 @@ export function CalibrationPointSelect({ sessionPath, panoramaFramePath, stitche
     if (motionState === "motion" && mapDirPath && pose) {
       try {
         return await api.buildRangeImageGlimWindowed(mapDirPath, timeSec, window, pose, AZ_BINS, EL_BINS, invert);
-      } catch {
-        // Fall through to the whole-map path — e.g. the window matched no
-        // submap (too narrow / off the trajectory's range).
+      } catch (e) {
+        // Preserve the fallback for usability, but make it visible: a whole-map
+        // render has very different time semantics and quality characteristics.
+        const fallback = await api.buildRangeImage(pointcloudPath, AZ_BINS, EL_BINS, invert, pose);
+        return { ...fallback, source: "glim_whole_map_fallback", source_detail: `GLIM 子图时间窗不可用：${String(e)}` };
       }
     }
     return api.buildRangeImage(pointcloudPath, AZ_BINS, EL_BINS, invert, pose);
@@ -187,6 +220,7 @@ export function CalibrationPointSelect({ sessionPath, panoramaFramePath, stitche
         .catch(() => {}),
     ];
     if (panoramaFramePath) {
+      setCurrentPanoramaFramePath(panoramaFramePath);
       tasks.push(
         api.readFileBase64(panoramaFramePath)
           .then((b64) => { if (!cancelled) setPanoramaUrl(`data:image/jpeg;base64,${b64}`); })
@@ -346,6 +380,7 @@ export function CalibrationPointSelect({ sessionPath, panoramaFramePath, stitche
       if (frame) {
         const b64 = await api.readFileBase64(frame.host_path);
         setPanoramaUrl(`data:image/jpeg;base64,${b64}`);
+        setCurrentPanoramaFramePath(frame.host_path);
         setPanoramaError(null);
       }
     } catch (e) {
@@ -485,13 +520,14 @@ export function CalibrationPointSelect({ sessionPath, panoramaFramePath, stitche
   // update what's on screen — they must not silently satisfy the save gate,
   // since a subsampled render can hide a real misalignment.
   async function generateOverlay(pose: Pose | null, subsample: number, official: boolean) {
-    if (!panoramaFramePath) {
+    const basePath = currentPanoramaFramePath ?? panoramaFramePath;
+    if (!basePath) {
       if (official) toast.error("没有全景帧，无法生成叠加预览");
       return;
     }
     if (official) setPreviewing(true);
     try {
-      const b64 = await api.projectOverlay(pointcloudPath, extrinsic, panoramaFramePath, subsample, pose);
+      const b64 = await api.projectOverlay(pointcloudPath, extrinsic, basePath, subsample, pose);
       setOverlayUrl(`data:image/jpeg;base64,${b64}`);
       if (official) {
         setPreviewedExtrinsic(extrinsic);
@@ -608,13 +644,13 @@ export function CalibrationPointSelect({ sessionPath, panoramaFramePath, stitche
           <div>
             <div style={{ fontSize: 11, color: "#8a8a8a", marginBottom: 4, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
               <span>
-                右：点云深度图 {rangeImage && <span className="mono" style={{ color: "#666" }}>· 等待第 {nextRightSeq} 点 · {rangeImage.point_count.toLocaleString()} bins · {rangeImage.min_range.toFixed(2)}–{rangeImage.max_range.toFixed(2)} m · 俯仰角 {rangeImage.el_min_deg.toFixed(0)}°~{rangeImage.el_max_deg.toFixed(0)}°</span>}
+                右：点云深度图 {rangeImage && <span className="mono" style={{ color: "#666" }} title={`输入 ${rangeImage.input_point_count.toLocaleString()} 点，有效 ${rangeImage.valid_point_count.toLocaleString()} 点，颜色按 P2–P98 映射：${rangeImage.color_min_range.toFixed(2)}–${rangeImage.color_max_range.toFixed(2)}m`}>· 等待第 {nextRightSeq} 点 · {rangeSourceLabel(rangeImage.source)} · 占用 {(rangeImage.occupancy_ratio * 100).toFixed(1)}% · P2/P50/P98 {rangeImage.range_p02.toFixed(1)}/{rangeImage.range_p50.toFixed(1)}/{rangeImage.range_p98.toFixed(1)} m · 过滤 {rangeImage.filtered_point_count.toLocaleString()} · 俯仰 {rangeImage.el_min_deg.toFixed(0)}°~{rangeImage.el_max_deg.toFixed(0)}°</span>}
               </span>
               <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
                 {rawPointcloudPath && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 4 }} title="GLIM=重建地图（运动场景下按时间窗只取邻近的子地图，而非整段会话；仍未做去噪）；单帧原始=未经 GLIM 重建的原始扫描点">
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }} title="GLIM=重建地图（运动场景下按时间窗只取邻近的子地图）；原始时间窗=未经 GLIM 重建、按当前时间附近截取的原始扫描点">
                     <SourceBtn label="GLIM 重建" active={pointcloudSource === "glim"} onClick={() => switchPointcloudSource("glim")} />
-                    <SourceBtn label="单帧原始" active={pointcloudSource === "raw"} onClick={() => switchPointcloudSource("raw")} />
+                    <SourceBtn label="原始时间窗" active={pointcloudSource === "raw"} onClick={() => switchPointcloudSource("raw")} />
                   </div>
                 )}
                 {motionState === "motion" && ((pointcloudSource === "raw" && rawPointcloudPath) || (pointcloudSource === "glim" && mapDirPath)) && (
@@ -644,7 +680,18 @@ export function CalibrationPointSelect({ sessionPath, panoramaFramePath, stitche
                 </label>
               </div>
             </div>
-            <PickCanvas imageDataUrl={rangeImage ? `data:image/png;base64,${rangeImage.image_png_base64}` : null} markers={rightMarkers} onPick={pickRight} pixelated emptyLabel={rangeLoading ? "重新生成中…" : "深度图未加载"} />
+            {rangeImage?.source === "glim_whole_map_fallback" && (
+              <div style={{ color: "#b26a00", fontSize: 11, marginBottom: 4 }} title={rangeImage.source_detail ?? undefined}>
+                ⚠ GLIM 时间窗子图不可用，当前显示的是整段会话地图；可能包含其他时刻的重影和动态物体。
+              </div>
+            )}
+            <PickCanvas
+              imageDataUrl={rangeImage ? `data:image/png;base64,${rangeImage.image_png_base64}` : null}
+              markers={rightMarkers}
+              onPick={pickRight}
+              pixelated
+              emptyLabel={rangeLoading ? "重新生成中…" : "深度图未加载"}
+            />
           </div>
         </div>
 
@@ -713,7 +760,14 @@ export function CalibrationPointSelect({ sessionPath, panoramaFramePath, stitche
                   <span style={{ color: "#199a3e" }}> · 高精度版本，可保存</span>
                 )}
               </div>
-              <img src={overlayUrl} style={{ width: "100%", borderRadius: 5, border: "1px solid #ddd" }} />
+              <SphereViewer
+                imageDataUrl={overlayUrl}
+                azBins={panoSize?.width ?? 3840}
+                elBins={panoSize?.height ?? 1920}
+                elMinDeg={-90}
+                elMaxDeg={90}
+                height={420}
+              />
             </div>
           )}
         </div>

@@ -25,11 +25,39 @@ pub struct RangeImageResult {
     pub points: Vec<f32>,
     pub min_range: f32,
     pub max_range: f32,
+    /// Robust range statistics. The rendered color scale uses p02..p98 rather
+    /// than raw min..max so a handful of near/far outliers cannot flatten the
+    /// contrast of the useful scene.
+    pub range_p02: f32,
+    pub range_p50: f32,
+    pub range_p98: f32,
+    pub color_min_range: f32,
+    pub color_max_range: f32,
+    /// Number of source points before/after finite + distance filtering.
+    pub input_point_count: usize,
+    pub valid_point_count: usize,
+    pub filtered_point_count: usize,
     pub point_count: usize,
+    pub occupancy_ratio: f32,
     /// Elevation range this image's rows actually span, degrees — see
     /// `build_range_image` doc: auto-fit to the data, not the full ±90°.
     pub el_min_deg: f32,
     pub el_max_deg: f32,
+    /// Filled by the Tauri command that knows which source produced the data.
+    pub source: String,
+    pub source_detail: Option<String>,
+}
+
+const MIN_VALID_RANGE_M: f32 = 0.3;
+const MAX_VALID_RANGE_M: f32 = 200.0;
+
+fn percentile(sorted: &[f32], q: f32) -> f32 {
+    debug_assert!(!sorted.is_empty());
+    let pos = q.clamp(0.0, 1.0) * (sorted.len() - 1) as f32;
+    let lo = pos.floor() as usize;
+    let hi = pos.ceil() as usize;
+    let f = pos - lo as f32;
+    sorted[lo] + (sorted[hi] - sorted[lo]) * f
 }
 
 /// Row mapping auto-fits elevation to the point cloud's own min/max (+ a small
@@ -49,26 +77,32 @@ pub fn build_range_image(
         anyhow::bail!("az_bins/el_bins must be > 0");
     }
 
-    let mut el_min = f32::INFINITY;
-    let mut el_max = f32::NEG_INFINITY;
+    let input_point_count = points.len();
+    let mut valid_points = Vec::with_capacity(points.len());
+    let mut elevations = Vec::with_capacity(points.len());
+    let mut ranges = Vec::with_capacity(points.len());
     for p in points {
         let r = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
-        if !r.is_finite() || r <= 1e-6 {
+        if !r.is_finite() || !(MIN_VALID_RANGE_M..=MAX_VALID_RANGE_M).contains(&r) {
             continue;
         }
         let el = (p[2] / r).clamp(-1.0, 1.0).asin();
-        if el < el_min {
-            el_min = el;
-        }
-        if el > el_max {
-            el_max = el;
-        }
+        valid_points.push(*p);
+        elevations.push(el);
+        ranges.push(r);
     }
-    if !el_min.is_finite() || !el_max.is_finite() {
-        anyhow::bail!("no valid points (all zero-range or non-finite)");
+    if valid_points.is_empty() {
+        anyhow::bail!("no valid points after filtering (expected range {MIN_VALID_RANGE_M}..={MAX_VALID_RANGE_M}m)");
     }
-    // 5% padding on each side so points right at the extremes don't sit exactly
-    // on the bin-clamped edge row.
+    elevations.sort_by(f32::total_cmp);
+    ranges.sort_by(f32::total_cmp);
+    // Robust bounds: isolated flying points no longer stretch the useful FOV
+    // or consume the complete color scale.
+    let mut el_min = percentile(&elevations, 0.01);
+    let mut el_max = percentile(&elevations, 0.99);
+    let range_p02 = percentile(&ranges, 0.02);
+    let range_p50 = percentile(&ranges, 0.50);
+    let range_p98 = percentile(&ranges, 0.98);
     let pad = ((el_max - el_min) * 0.05).max(0.001_f32.to_radians());
     el_min = (el_min - pad).max(-std::f32::consts::FRAC_PI_2);
     el_max = (el_max + pad).min(std::f32::consts::FRAC_PI_2);
@@ -78,7 +112,7 @@ pub fn build_range_image(
     let mut best_range = vec![f32::INFINITY; n_bins];
     let mut best_point = vec![[f32::NAN; 3]; n_bins];
 
-    for p in points {
+    for p in &valid_points {
         let r = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
         if !r.is_finite() || r <= 1e-6 {
             continue;
@@ -134,12 +168,14 @@ pub fn build_range_image(
     }
 
     let mut img = image::RgbImage::new(az_bins, el_bins);
-    let span = (max_range - min_range).max(1e-6);
+    let color_min_range = range_p02;
+    let color_max_range = range_p98.max(range_p02 + 1e-6);
+    let span = color_max_range - color_min_range;
     for row in 0..el_bins as usize {
         for col in 0..az_bins as usize {
             let idx = row * az_bins as usize + col;
             let rgb = if best_range[idx].is_finite() {
-                let t = (best_range[idx] - min_range) / span;
+                let t = (best_range[idx] - color_min_range) / span;
                 colormap(t)
             } else {
                 // Neutral mid-gray, deliberately far from the colormap's dark
@@ -175,9 +211,20 @@ pub fn build_range_image(
         points: points_out,
         min_range,
         max_range,
+        range_p02,
+        range_p50,
+        range_p98,
+        color_min_range,
+        color_max_range,
+        input_point_count,
+        valid_point_count: valid_points.len(),
+        filtered_point_count: input_point_count - valid_points.len(),
         point_count,
+        occupancy_ratio: point_count as f32 / n_bins as f32,
         el_min_deg: el_min.to_degrees(),
         el_max_deg: el_max.to_degrees(),
+        source: "pointcloud".to_string(),
+        source_detail: None,
     })
 }
 
@@ -270,11 +317,16 @@ fn load_csv_xyz(path: &Path) -> anyhow::Result<Vec<[f32; 3]>> {
 /// flag if the windowed slice looks offset from where the timeline says it
 /// should be.
 pub fn load_csv_xyz_windowed(path: &Path, t_center_sec: f64, window_sec: f64) -> anyhow::Result<Vec<[f32; 3]>> {
-    let text = std::fs::read_to_string(path)?;
-    let mut lines = text.lines();
+    use std::io::BufRead;
+    // Real sessions are commonly 1–2 GB. Streaming avoids duplicating the
+    // entire file as one String on every timeline refresh. Rows are emitted in
+    // timestamp order by storage-extract-mid360, so stop as soon as the upper
+    // edge of the requested window has been passed.
+    let file = std::fs::File::open(path)?;
+    let mut lines = std::io::BufReader::new(file).lines();
     let header = lines
         .next()
-        .ok_or_else(|| anyhow::anyhow!("empty point cloud csv"))?;
+        .ok_or_else(|| anyhow::anyhow!("empty point cloud csv"))??;
     let cols: Vec<&str> = header.split(',').map(|c| c.trim()).collect();
     let find = |names: &[&str]| -> Option<usize> {
         names
@@ -294,12 +346,16 @@ pub fn load_csv_xyz_windowed(path: &Path, t_center_sec: f64, window_sec: f64) ->
 
     let mut out = Vec::new();
     for line in lines {
+        let line = line?;
         if line.trim().is_empty() {
             continue;
         }
         let fields: Vec<&str> = line.split(',').collect();
         let t_ns: f64 = fields[ti].trim().parse()?;
-        if t_ns < t_min_ns || t_ns > t_max_ns {
+        if t_ns > t_max_ns {
+            break;
+        }
+        if t_ns < t_min_ns {
             continue;
         }
         let x: f32 = fields[xi].trim().parse()?;
@@ -558,6 +614,40 @@ mod tests {
     #[test]
     fn build_range_image_rejects_empty_input() {
         assert!(build_range_image(&[], 10, 10, false).is_err());
+    }
+
+    #[test]
+    fn robust_percentiles_ignore_extreme_range_outliers() {
+        let mut points = Vec::new();
+        for i in 0..100 {
+            // Cover only half the azimuth range so the far outlier lands in
+            // its own bin and remains visible in raw min/max diagnostics.
+            let az = (i as f32 * 1.8).to_radians();
+            let r = 10.0 + (i % 5) as f32;
+            points.push([r * az.cos(), r * az.sin(), 0.0]);
+        }
+        // Both survive the physical range filter, but neither should define
+        // the display scale for the useful 10..14m scene.
+        points.push([0.31, 0.0, 0.0]);
+        points.push([0.0, -199.0, 0.0]);
+
+        let result = build_range_image(&points, 72, 8, false).unwrap();
+        assert!(result.min_range < 1.0);
+        assert!(result.max_range > 100.0);
+        assert!(result.color_min_range > 5.0, "{}", result.color_min_range);
+        assert!(result.color_max_range < 20.0, "{}", result.color_max_range);
+        assert_eq!(result.input_point_count, 102);
+        assert_eq!(result.valid_point_count, 102);
+    }
+
+    #[test]
+    fn reports_distance_filter_diagnostics() {
+        let points = [[0.1, 0.0, 0.0], [2.0, 0.0, 0.0], [250.0, 0.0, 0.0]];
+        let result = build_range_image(&points, 8, 4, false).unwrap();
+        assert_eq!(result.input_point_count, 3);
+        assert_eq!(result.valid_point_count, 1);
+        assert_eq!(result.filtered_point_count, 2);
+        assert!(result.occupancy_ratio > 0.0 && result.occupancy_ratio <= 1.0);
     }
 
     /// `invert_elevation` must actually flip which row a given point lands in

@@ -298,6 +298,51 @@ pub fn job_artifacts(job_id: String, state: State<AppState>) -> Result<Vec<Artif
         .map_err(|e| e.to_string())
 }
 
+/// Find the newest reusable panorama job for the exact same input path.
+/// A cache hit is accepted only when the job succeeded, both the stitched
+/// video and extracted frame still exist and are non-empty, and the source
+/// .insv has not been modified since the job completed.
+#[tauri::command]
+pub fn find_reusable_panorama(
+    input_path: String,
+    state: State<AppState>,
+) -> Result<Option<Vec<ArtifactRow>>, String> {
+    let input = PathBuf::from(&input_path);
+    let input_modified = input
+        .metadata()
+        .and_then(|m| m.modified())
+        .map_err(|e| format!("无法读取 INSV 修改时间：{e}"))?;
+    let reg = state.registry.lock().unwrap();
+    let jobs = reg.list_jobs().map_err(|e| e.to_string())?;
+    for job in jobs {
+        if job.workflow_id != "calib_panorama_frame"
+            || job.input_path != input_path
+            || job.status != "success"
+        {
+            continue;
+        }
+        let artifacts = reg.job_artifacts(&job.id).map_err(|e| e.to_string())?;
+        let valid = |output_id: &str| {
+            artifacts.iter().any(|a| {
+                if a.output_id != output_id {
+                    return false;
+                }
+                std::fs::metadata(&a.host_path)
+                    .map(|m| {
+                        m.is_file()
+                            && m.len() > 0
+                            && m.modified().map(|t| t >= input_modified).unwrap_or(false)
+                    })
+                    .unwrap_or(false)
+            })
+        };
+        if valid("panorama") && valid("frame") {
+            return Ok(Some(artifacts));
+        }
+    }
+    Ok(None)
+}
+
 #[tauri::command]
 pub fn job_provenance(
     job_id: String,
@@ -450,7 +495,9 @@ pub fn build_range_image(
     if let Some(pose) = frame_pose {
         points = hera_runner::world_to_frame(&points, &pose);
     }
-    hera_runner::build_range_image(&points, az_bins, el_bins, invert_elevation).map_err(|e| e.to_string())
+    let mut result = hera_runner::build_range_image(&points, az_bins, el_bins, invert_elevation).map_err(|e| e.to_string())?;
+    result.source = if frame_pose.is_some() { "glim_whole_map" } else { "pointcloud" }.to_string();
+    Ok(result)
 }
 
 /// Right-panel "raw single-frame" source (as opposed to the GLIM aggregated
@@ -472,7 +519,10 @@ pub fn build_range_image_windowed(
         return Err(format!("file not found: {}", raw_points_path));
     }
     let points = hera_runner::load_csv_xyz_windowed(&p, t_center_sec, window_sec).map_err(|e| e.to_string())?;
-    hera_runner::build_range_image(&points, az_bins, el_bins, invert_elevation).map_err(|e| e.to_string())
+    let mut result = hera_runner::build_range_image(&points, az_bins, el_bins, invert_elevation).map_err(|e| e.to_string())?;
+    result.source = "raw_time_window".to_string();
+    result.source_detail = Some(format!("center={t_center_sec:.3}s, window={window_sec:.3}s"));
+    Ok(result)
 }
 
 /// GLIM-map "time-windowed" source: instead of reprojecting the *whole
@@ -498,7 +548,10 @@ pub fn build_range_image_glim_windowed(
     }
     let points = hera_runner::load_glim_points_windowed(&p, t_center_sec, window_sec).map_err(|e| e.to_string())?;
     let points = hera_runner::world_to_frame(&points, &frame_pose);
-    hera_runner::build_range_image(&points, az_bins, el_bins, invert_elevation).map_err(|e| e.to_string())
+    let mut result = hera_runner::build_range_image(&points, az_bins, el_bins, invert_elevation).map_err(|e| e.to_string())?;
+    result.source = "glim_submaps".to_string();
+    result.source_detail = Some(format!("center={t_center_sec:.3}s, window={window_sec:.3}s"));
+    Ok(result)
 }
 
 /// First Mid360 sample's `timestamp_host_ns` from a raw

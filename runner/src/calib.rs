@@ -368,6 +368,14 @@ pub fn solve_extrinsic(
 /// panorama frame), colored by range, for human confirmation before saving —
 /// task doc §0/§4: the solver's output is only ever a suggestion, this is the
 /// forced "look at it" step before `extrinsic.json` gets written.
+fn percentile_f64(sorted: &[f64], q: f64) -> f64 {
+    let pos = q.clamp(0.0, 1.0) * (sorted.len() - 1) as f64;
+    let lo = pos.floor() as usize;
+    let hi = pos.ceil() as usize;
+    let f = pos - lo as f64;
+    sorted[lo] + (sorted[hi] - sorted[lo]) * f
+}
+
 pub fn project_overlay(
     points: &[[f32; 3]],
     extrinsic: Extrinsic,
@@ -377,6 +385,35 @@ pub fn project_overlay(
     let mut img = base.clone();
     let (width, height) = (img.width() as f64, img.height() as f64);
     let step = subsample.max(1);
+    let r = rpy_deg_to_matrix(extrinsic.roll_deg, extrinsic.pitch_deg, extrinsic.yaw_deg);
+    let r_t = mat_transpose(&r);
+
+    // Robust (P2-P98) color scale instead of a fixed 8m ceiling — a fixed
+    // ceiling meant any scene where most points sit beyond 8m (larger rooms,
+    // outdoor, or simply a translation-heavy extrinsic pushing "range" up)
+    // rendered as near-uniform red regardless of actual depth structure,
+    // making the overlay useless for judging alignment. Same fix as
+    // rangeimage.rs's build_range_image, applied here too since this was the
+    // one place that still had the old fixed normalization.
+    let mut ranges: Vec<f64> = points
+        .iter()
+        .step_by(step)
+        .filter_map(|p| {
+            let rel = [p[0] as f64 - extrinsic.tx, p[1] as f64 - extrinsic.ty, p[2] as f64 - extrinsic.tz];
+            let range = (rel[0] * rel[0] + rel[1] * rel[1] + rel[2] * rel[2]).sqrt();
+            range.is_finite().then_some(range)
+        })
+        .filter(|r| *r > 1e-3)
+        .collect();
+    ranges.sort_by(f64::total_cmp);
+    let (color_min, color_max) = if ranges.is_empty() {
+        (0.0, 8.0)
+    } else {
+        let p02 = percentile_f64(&ranges, 0.02);
+        let p98 = percentile_f64(&ranges, 0.98);
+        (p02, p98.max(p02 + 1e-6))
+    };
+    let span = (color_max - color_min).max(1e-6);
 
     for p in points.iter().step_by(step) {
         let p64 = [p[0] as f64, p[1] as f64, p[2] as f64];
@@ -385,13 +422,12 @@ pub fn project_overlay(
         if !range.is_finite() || range <= 1e-3 {
             continue;
         }
-        let r = rpy_deg_to_matrix(extrinsic.roll_deg, extrinsic.pitch_deg, extrinsic.yaw_deg);
-        let d_cam = mat_vec(&mat_transpose(&r), rel);
+        let d_cam = mat_vec(&r_t, rel);
         let (u, v) = direction_to_erp_pixel(d_cam, width, height);
         if u < 0.0 || u >= width || v < 0.0 || v >= height {
             continue;
         }
-        let t = (range / 8.0).clamp(0.0, 1.0);
+        let t = ((range - color_min) / span).clamp(0.0, 1.0);
         let color = range_color(t);
         for dx in -1..=1i32 {
             for dy in -1..=1i32 {
@@ -559,5 +595,47 @@ mod tests {
         let initial = Extrinsic { tx: 0.0, ty: 0.0, tz: 0.0, roll_deg: 0.0, pitch_deg: 0.0, yaw_deg: 0.0 };
         let err = solve_extrinsic(&frames, initial, 3840.0, 1920.0).unwrap_err();
         assert!(err.to_string().contains("暂不支持"), "unexpected error: {err}");
+    }
+
+    /// Regression test for the bug found via real screenshots: a fixed 8m
+    /// color ceiling made every point beyond 8m (any room/scene bigger than
+    /// that, or a translation-heavy extrinsic) render as identical saturated
+    /// red, so two points at meaningfully different real depths (10m vs 14m)
+    /// were visually indistinguishable — the overlay carried no depth
+    /// information at all for the common case of an indoor/outdoor scene
+    /// larger than 8m. With P2-P98 robust scaling, points within the bulk of
+    /// the scene's actual range must get visibly different colors, and a
+    /// single far outlier must not compress that contrast.
+    #[test]
+    fn overlay_color_uses_robust_range_not_fixed_8m_ceiling() {
+        let identity = Extrinsic { tx: 0.0, ty: 0.0, tz: 0.0, roll_deg: 0.0, pitch_deg: 0.0, yaw_deg: 0.0 };
+        let width = 360u32;
+        let height = 180u32;
+        let base = image::RgbImage::from_pixel(width, height, image::Rgb([96, 96, 100]));
+
+        // Bulk of "scene" points spread across many azimuths at 10..14m —
+        // mimics a real room/outdoor scene bigger than the old 8m ceiling.
+        let mut points: Vec<[f32; 3]> = Vec::new();
+        for i in 0..40 {
+            let az = (i as f64 * 8.0).to_radians();
+            let range = 10.0 + (i % 5) as f64; // 10..14m
+            points.push([(range * az.cos()) as f32, (range * az.sin()) as f32, 0.0]);
+        }
+        // One far outlier that must not flatten the above cluster's contrast.
+        points.push([0.0, 150.0, 0.0]);
+
+        let img = project_overlay(&points, identity, &base, 1);
+
+        // Sample pixel colors for a near-cluster point (10m) and a far-cluster
+        // point (14m), both well within the "scene" — they must differ.
+        let (u10, v10) = direction_to_erp_pixel([10.0, 0.0, 0.0], width as f64, height as f64);
+        let (u14, v14) = direction_to_erp_pixel(
+            [(14.0 * (32.0_f64).to_radians().cos()), (14.0 * (32.0_f64).to_radians().sin()), 0.0],
+            width as f64,
+            height as f64,
+        );
+        let c10 = img.get_pixel(u10.round().clamp(0.0, width as f64 - 1.0) as u32, v10.round().clamp(0.0, height as f64 - 1.0) as u32);
+        let c14 = img.get_pixel(u14.round().clamp(0.0, width as f64 - 1.0) as u32, v14.round().clamp(0.0, height as f64 - 1.0) as u32);
+        assert_ne!(c10, c14, "10m and 14m points must render as different colors, not both saturated");
     }
 }

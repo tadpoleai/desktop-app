@@ -48,6 +48,7 @@ export function CalibrationView({ currentSession, onRequestSession }: Props) {
   const [starting, setStarting] = React.useState(false);
   const [stage, setStage] = React.useState<"pipeline" | "select">("pipeline");
   const [reextractTimestamp, setReextractTimestamp] = React.useState(0);
+  const [reusePanorama, setReusePanorama] = React.useState(true);
 
   React.useEffect(() => {
     if (currentSession) setSession(currentSession);
@@ -144,8 +145,44 @@ export function CalibrationView({ currentSession, onRequestSession }: Props) {
         toast.error("检测到本机 GPU，但尚未在设置中启用「GPU 支持」，全景拼接已跳过");
       } else {
         try {
-          const jobId = await api.runWorkflow("calib_panorama_frame", session.insv_path, {});
-          setJobs((prev) => ({ ...prev, panorama: { jobId, label: "全景帧", stepStates: {}, running: true, failed: false, artifacts: [] }, frameReextract: undefined }));
+          const cached = reusePanorama ? await api.findReusablePanorama(session.insv_path) : null;
+          if (cached) {
+            setJobs((prev) => ({
+              ...prev,
+              panorama: {
+                jobId: cached[0]?.job_id ?? "panorama-cache",
+                label: "全景帧（复用缓存）",
+                stepStates: { step_stitch: "done", step_frame: "done" },
+                running: false,
+                failed: false,
+                artifacts: cached,
+              },
+              frameReextract: undefined,
+            }));
+            toast.success("已复用该 INSV 之前生成的完整全景视频，无需重新拼接");
+            const cachedVideo = cached.find((a) => a.output_id === "panorama");
+            if (cachedVideo) {
+              const frameJobId = await api.runWorkflow("calib_frame_extract", cachedVideo.host_path, {
+                step_frame: { timestamp_s: reextractTimestamp },
+              });
+              setJobs((prev) => ({
+                ...prev,
+                frameReextract: {
+                  jobId: frameJobId,
+                  label: `缓存视频抽帧（${reextractTimestamp.toFixed(1)}s）`,
+                  stepStates: {},
+                  running: true,
+                  failed: false,
+                  artifacts: [],
+                },
+              }));
+            }
+          } else {
+            const jobId = await api.runWorkflow("calib_panorama_frame", session.insv_path, {
+              step_frame: { timestamp_s: reextractTimestamp },
+            });
+            setJobs((prev) => ({ ...prev, panorama: { jobId, label: "全景帧", stepStates: {}, running: true, failed: false, artifacts: [] }, frameReextract: undefined }));
+          }
         } catch (e) {
           toast.error(`全景拼接启动失败：${e}`);
         }
@@ -538,6 +575,26 @@ export function CalibrationView({ currentSession, onRequestSession }: Props) {
                   </div>
                 </div>
               )}
+
+              <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 12, padding: "8px 10px", background: "#f7f9fb", border: "1px solid #e5e9ed", borderRadius: 5 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#666", cursor: "pointer" }}>
+                  <input type="checkbox" checked={reusePanorama} onChange={(e) => setReusePanorama(e.target.checked)} />
+                  优先复用该 INSV 已完成的全景拼接（推荐）
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#666" }} title="首次拼接仍处理完整 INSV；这里只决定拼接完成后默认抽取哪一帧">
+                  初始全景帧时间
+                  <input
+                    className="hs-input mono"
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    style={{ width: 86, height: 24 }}
+                    value={reextractTimestamp}
+                    onChange={(e) => setReextractTimestamp(Math.max(0, Number(e.target.value) || 0))}
+                  />
+                  秒
+                </label>
+              </div>
 
               <button className="hs-btn hs-btn-primary" style={{ height: 28 }} onClick={startPipeline} disabled={starting}>
                 {starting ? "启动中…" : "开始重建 / 拼接"}

@@ -80,6 +80,7 @@ pub fn run() {
             commands::cancel_job,
             commands::list_jobs,
             commands::job_artifacts,
+            commands::find_reusable_panorama,
             commands::open_path,
             commands::resolve_tool,
             commands::detect_gpu,
